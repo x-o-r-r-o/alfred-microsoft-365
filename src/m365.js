@@ -67,11 +67,13 @@ function sleep(sec) {
 }
 function oneLine(s, max = 120) {
   const t = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
-  return t.length > max ? t.slice(0, max - 1) + "…" : t;
+  if (t.length <= max) return t;
+  const cps = Array.from(t); // never split an emoji (surrogate pair) in half
+  return cps.length > max ? cps.slice(0, max - 1).join("") + "…" : t;
 }
 // Case-, accent- and width-insensitive text for matching.
 function norm(s) {
-  return String(s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 function hash(s) {
   let a = 5381, b = 52711;
@@ -111,8 +113,9 @@ function readText(p) {
 }
 function writeText(p, text) {
   mkdirp(p.replace(/\/[^/]+$/, ""));
-  $(text).writeToFileAtomicallyEncodingError(p, true, $.NSUTF8StringEncoding, null);
-  FM.setAttributesOfItemAtPathError($({ NSFilePosixPermissions: 384 }), p, null);
+  const ok = $(text).writeToFileAtomicallyEncodingError(p, true, $.NSUTF8StringEncoding, null);
+  if (ok) FM.setAttributesOfItemAtPathError($({ NSFilePosixPermissions: 384 }), p, null);
+  return ok;
 }
 function readJSON(p) {
   const t = readText(p);
@@ -143,7 +146,7 @@ function dataRoot() {
 }
 function account() {
   const a = readJSON(`${dataRoot()}/account.json`);
-  return a && a.client_id === CLIENT_ID && a.tenant === TENANT ? a : null;
+  return a && a.client_id === CLIENT_ID && String(a.tenant).toLowerCase() === TENANT.toLowerCase() ? a : null;
 }
 // Everything fetched from Graph is cached per account.
 function cacheDir() {
@@ -208,7 +211,10 @@ function kcGet(acct) {
 }
 function kcSet(acct, value) {
   const t = testSecretPath(acct);
-  if (t) return writeText(t, value);
+  if (t) {
+    if (!writeText(t, value)) throw new M365Error("auth", "Couldn't save the sign-in to the Keychain");
+    return;
+  }
   const data = $(value).dataUsingEncoding($.NSUTF8StringEncoding);
   const q = kcQuery(acct);
   const upd = $.NSMutableDictionary.alloc.init;
@@ -295,7 +301,7 @@ function http(method, url, { headers = {}, body = null, timeout = 20 } = {}) {
     head = idx < 0 ? text : text.slice(0, idx);
     text = idx < 0 ? "" : text.slice(idx + sep);
     status = parseInt(head.match(/^HTTP\/[\d.]+ (\d{3})/)[1], 10);
-    if (status >= 200 || !/^HTTP\//.test(text)) break;
+    // More header blocks follow after 1xx responses and a proxy's "200 Connection established".
   }
   const hdrs = {};
   for (const line of head.split(/\r?\n/).slice(1)) {
@@ -461,7 +467,7 @@ function graph(method, path, opts = {}) {
       continue;
     }
     if (r.status === 401) {
-      kcDel(kcAccount());
+      // Keep the refresh token: this can be a claims challenge or a transient failure.
       throw new M365Error("auth", "Microsoft rejected your sign-in. Sign in again.");
     }
     if (r.status === 429 || r.status === 503 || r.status === 504) {
@@ -483,6 +489,9 @@ function graphError(r) {
   const e = (r.json && r.json.error) || {};
   const code = String(e.code || "");
   const msg = oneLine(e.message || `HTTP ${r.status}`, 200);
+  if (code === "10008") {
+    return new M365Error("graph", "OneNote can't list your pages: a OneDrive library holds more than 5,000 OneNote items (error 10008)", { status: r.status, code });
+  }
   if (r.status === 403) {
     return new M365Error("consent", `Permission denied: ${msg}`, { status: 403, code });
   }
@@ -597,6 +606,15 @@ function errorFromJSON(j) {
 function storeCache(name, data) {
   writeJSON(cacheFile(name), { fetched_at: nowMs(), data });
   removePath(errorFile(name));
+  if (/^(mail|people)-/.test(name)) pruneQueryCache();
+}
+// Search results are cached per query: drop the ones older than a day.
+function pruneQueryCache() {
+  const dir = cacheDir();
+  const names = ObjC.deepUnwrap(FM.contentsOfDirectoryAtPathError(dir, null)) || [];
+  for (const n of names) {
+    if (/^(mail|people)-[0-9a-f]+\.json$/.test(n) && nowMs() - mtimeMs(`${dir}/${n}`) > 86400000) removePath(`${dir}/${n}`);
+  }
 }
 
 // Background job: refresh one cache entry, once at a time.
@@ -779,28 +797,30 @@ function poll() {
   if (!deviceCode || !p || p.id !== id) return;
   let interval = p.interval;
   const hardStop = nowMs() + 1800 * 1000;
-  let netFailures = 0;
   const finish = (msg) => {
     const cur = readJSON(pendingFile());
     if (cur && cur.id === id) removePath(pendingFile());
     if (msg) notify(msg);
   };
   for (;;) {
-    sleep(interval * scale);
+    const left = (Math.min(p.expires_at, hardStop) - nowMs()) / 1000;
+    sleep(Math.max(0, Math.min(interval * scale, left)));
     p = readJSON(pendingFile());
     if (!p || p.id !== id) return; // cancelled or superseded
     if (nowMs() >= p.expires_at || nowMs() >= hardStop) return finish(`The sign-in code expired. Use the ${KW_ACCOUNT} keyword to try again.`);
     const r = tokenPost({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", client_id: CLIENT_ID, device_code: deviceCode });
-    if (r.net) {
-      netFailures++;
-      continue; // keep trying until the code expires
-    }
+    if (r.net) continue; // offline for a moment: keep trying until the code expires
     const j = r.json || {};
     if (r.status === 200 && j.access_token) {
       if (!j.refresh_token) return finish("Signed in, but Microsoft didn't return a refresh token (offline_access). Sign in again.");
       const cur = readJSON(pendingFile());
       if (!cur || cur.id !== id) return;
-      saveTokenResponse(j, null);
+      try {
+        saveTokenResponse(j, null);
+      } catch (e) {
+        return finish(e.message);
+      }
+      removePath(throttleFile()); // an old back-off must not break the first request
       let who = "";
       try {
         const me = graph("GET", "/me?$select=id,displayName,mail,userPrincipalName");
@@ -812,7 +832,6 @@ function poll() {
       } catch (e) {
         writeJSON(`${dataRoot()}/account.json`, { id: "default", name: "", email: "", client_id: CLIENT_ID, tenant: TENANT, signed_in_at: nowMs() });
       }
-      removePath(throttleFile());
       return finish(who ? `Signed in as ${who}` : "Signed in to Microsoft 365");
     }
     if (r.status === 429 || r.status >= 500) {
@@ -839,8 +858,7 @@ function poll() {
 
 function logout() {
   kcDel(kcAccount());
-  const a = account();
-  if (a) removePath(cacheDir());
+  removePath(cacheDir());
   removePath(`${dataRoot()}/account.json`);
   removePath(pendingFile());
   return "Signed out of Microsoft 365";
@@ -1168,7 +1186,9 @@ function teamsItems(query) {
     rows.push(Object.assign(info("Set your status…", "Available, busy, do not disturb, be right back, away, offline", "presence-available"), { autocomplete: "status ", valid: false }));
     return { items: rows, extra };
   }
-  if (q.length >= 2) {
+  if (q.length < 2) {
+    if (!list.length) rows.push(info("Keep typing to find people", "Type at least two letters of a name or email address", "person"));
+  } else {
     try {
       const people = peopleSearch(q);
       for (const p of people) rows.push(personRow(p));
@@ -1368,8 +1388,16 @@ function onenoteItems(query) {
   if (!loadTokens()) return { items: errorItems(new M365Error("auth", "Not signed in")) };
   const q = query.trim();
   const nm = q.match(/^new(?:\s+([\s\S]*))?$/i);
-  if (nm) return { items: newPageItems(nm[1] || "") };
   const now = clock();
+  if (nm) {
+    // Also offer pages whose title matches, e.g. a page called "New ideas" (cached index only).
+    const idx = readJSON(cacheFile("onenote-index"));
+    const words = norm(q).split(/\s+/).filter(Boolean);
+    const hits = idx && Array.isArray(idx.data)
+      ? idx.data.map((p) => ({ p, s: scorePage(p, words) })).filter((x) => x.s >= 0).sort((a, b) => b.s - a.s || b.p.m - a.p.m).slice(0, 10).map((x) => pageRow(x.p, now))
+      : [];
+    return { items: newPageItems(nm[1] || "").concat(hits) };
+  }
   let res;
   try {
     res = swr("onenote-index", 1800, { async: true });
@@ -1397,7 +1425,7 @@ function onenoteItems(query) {
 
 function escapeXml(s) {
   return String(s)
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, "") // not allowed in XML
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "") // not allowed in XML
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function localISO(d) {

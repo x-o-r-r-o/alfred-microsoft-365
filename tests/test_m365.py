@@ -855,6 +855,107 @@ class AccountTests(Base):
         self.assertEqual(self.act("clear-cache"), "Cleared cached data")
 
 
+# ---------------------------------------------------------------- regression tests (audit pass 1)
+
+class AuditOneTests(Base):
+    def fake_curl(self, raw):
+        path = os.path.join(self.dir, "fakecurl")
+        with open(os.path.join(self.dir, "response"), "wb") as f:
+            f.write(raw)
+        with open(path, "w") as f:
+            f.write(f'#!/bin/bash\ncat >/dev/null\ncat "{self.dir}/response"\n')
+        os.chmod(path, 0o755)
+        return path
+
+    def test_proxy_and_interim_header_blocks(self):
+        self.sign_in()
+        body = json.dumps({"value": [{"subject": "Via proxy", "webLink": "https://outlook.office365.com/x", "receivedDateTime": "2026-09-26T08:00:00Z"}]})
+        raw = ("HTTP/1.1 200 Connection established\r\n\r\nHTTP/1.1 100 Continue\r\n\r\n"
+               "HTTP/2 200\r\ncontent-type: application/json\r\n\r\n" + body).encode()
+        it = self.sf("outlook", "proxy", M365_TEST_CURL=self.fake_curl(raw))
+        self.assertEqual(it[0]["title"], "Via proxy")
+
+    def test_second_401_keeps_the_refresh_token(self):
+        self.sign_in(access="AT-bad", valid=False)
+        MOCK.overrides[("GET", "/v1.0/me/messages")] = [(401, {}, {"error": {"code": "InvalidAuthenticationToken", "message": "claims"}})] * 2
+        it = self.sf("outlook", "x")
+        self.assertEqual(it[0]["title"], "Sign in to Microsoft 365")
+        self.assertIsNotNone(self.tokens())
+
+    def test_stale_throttle_does_not_break_sign_in(self):
+        with open(os.path.join(self.dir, "cache", "throttled-until"), "w") as f:
+            f.write(str(int(time.time() * 1000) + 300000))
+        MOCK.device_queue = ["ok"]
+        self.act("login", M365_TEST_INTERVAL_SCALE="0.02")
+        self.wait_for(lambda: "Signed in as Zoë Tester" in self.read("notified"))
+
+    def test_expiry_is_noticed_before_the_next_interval(self):
+        MOCK.devicecode = dict(MOCK.devicecode, expires_in=1, interval=30)
+        t = time.time()
+        self.act("login")
+        self.wait_for(lambda: "expired" in self.read("notified"), timeout=10)
+        self.assertLess(time.time() - t, 6)
+        self.assertEqual(MOCK.device_polls, [])
+
+    def test_keychain_failure_is_reported(self):
+        MOCK.device_queue = ["ok"]
+        os.chmod(os.path.join(self.dir, "kc"), 0o500)
+        try:
+            self.act("login", M365_TEST_INTERVAL_SCALE="0.02")
+            self.wait_for(lambda: "Keychain" in self.read("notified"))
+        finally:
+            os.chmod(os.path.join(self.dir, "kc"), 0o700)
+
+    def test_old_search_caches_are_pruned(self):
+        self.sign_in()
+        old = os.path.join(self.dir, "cache", "user-1", "mail-deadbeef.json")
+        os.makedirs(os.path.dirname(old), exist_ok=True)
+        with open(old, "w") as f:
+            f.write("{}")
+        os.utime(old, (time.time() - 2 * 86400, time.time() - 2 * 86400))
+        self.sf("outlook", "fresh")
+        self.assertFalse(os.path.exists(old))
+
+    def test_onenote_10008(self):
+        self.sign_in()
+        MOCK.overrides[("GET", "/v1.0/me/onenote/pages")] = [(403, {}, {"error": {"code": "10008", "message": "too many items"}})]
+        self.assertIn("5,000 OneNote items", self.sf("onenote")[0]["title"])
+
+    def test_new_prefix_still_finds_pages(self):
+        self.sign_in()
+        MOCK.pages = [page("New ideas"), page("Other")]
+        self.sf("onenote")
+        it = self.sf("onenote", "new ideas")
+        self.assertEqual(self.titles(it), ["Create “ideas”", "New ideas"])
+
+    def test_tenant_case_does_not_lose_the_account(self):
+        self.sign_in()
+        self.assertIn("Zoë Tester", self.sf("account", tenant="Common")[0]["title"])
+
+    def test_truncation_keeps_emoji_whole(self):
+        self.sign_in()
+        MOCK.events = [ev("a" * 119 + "🎉🎉", "2026-09-26T11:00:00", "2026-09-26T11:15:00")]
+        title = self.sf("teams")[0]["title"]
+        self.assertEqual(title, "a" * 119 + "…")
+        MOCK.reset()
+        MOCK.valid_access.add("AT-seed")
+        shutil.rmtree(os.path.join(self.dir, "cache", "user-1"))
+        MOCK.events = [ev("a" * 118 + "🎉🎉🎉", "2026-09-26T11:00:00", "2026-09-26T11:15:00")]
+        self.assertEqual(self.sf("teams")[0]["title"], "a" * 118 + "🎉…")
+
+    def test_one_letter_query_hint(self):
+        self.sign_in()
+        self.assertEqual(self.sf("teams", "j")[0]["title"], "Keep typing to find people")
+
+    def test_logout_without_account_file_clears_cache(self):
+        self.sign_in()
+        os.remove(os.path.join(self.dir, "data", "account.json"))
+        self.sf("teams")
+        self.assertTrue(os.path.isdir(os.path.join(self.dir, "cache", "default")))
+        self.act("logout")
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "cache", "default")))
+
+
 class PlistTests(unittest.TestCase):
     def test_build_and_plist(self):
         subprocess.run([sys.executable, "tools/build.py"], cwd=ROOT, check=True, capture_output=True)
