@@ -30,7 +30,7 @@ See today’s Teams meetings via the `teams` keyword, with the ones happening no
 * <kbd>⌘</kbd><kbd>↩</kbd> Copy the join link.
 * <kbd>⌥</kbd><kbd>↩</kbd> Open the event in Outlook.
 
-Open a chat with someone by typing their name after the keyword.
+Open a chat with someone by typing their name or email address via the `teams` keyword.
 
 ![Finding a person to chat with](images/teams-people.png)
 
@@ -38,7 +38,7 @@ Open a chat with someone by typing their name after the keyword.
 * <kbd>⌘</kbd><kbd>↩</kbd> Copy their email address.
 * <kbd>⌥</kbd><kbd>↩</kbd> Start a video call.
 
-Set your Teams status with `teams status`, like `teams status busy`, `teams status dnd 2h` or `teams status reset`. Without a duration, Busy and Do not disturb last a day and the others seven days.
+Set your Teams status, optionally for a while, like `status busy`, `status dnd 2h` or `status reset`, via the `teams` keyword. Without a duration, Busy and Do not disturb last a day and the others seven days.
 
 ![Setting the Teams status](images/teams-status.png)
 
@@ -50,7 +50,7 @@ Search the titles of your OneNote pages across every notebook via the `onenote` 
 * <kbd>⌘</kbd><kbd>↩</kbd> Open the page in OneNote on the web.
 * <kbd>⌥</kbd><kbd>↩</kbd> Copy the web link.
 
-Create a page with `onenote new` followed by its title. The clipboard becomes the page’s text, or type it after `::`, like `onenote new Ideas :: call the printer shop`. Pages go to your default section, or to the section set in the Workflow’s Configuration.
+Create a page by typing `new` and its title, like `new Ideas`, via the `onenote` keyword. The clipboard becomes the page’s text, or type it after `::`, like `new Ideas :: call the printer shop`. Pages go to your default section, or to the section set in the Workflow’s Configuration.
 
 ![Creating a OneNote page](images/onenote-new.png)
 

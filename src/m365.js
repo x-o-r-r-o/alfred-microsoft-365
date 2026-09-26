@@ -347,6 +347,14 @@ function netError(code) {
   return new M365Error("graph", `Request failed (curl error ${code})`, { code });
 }
 
+// A 2xx that isn't JSON comes from a captive portal or a proxy, not from Microsoft.
+function notJSON(r) {
+  return r.json === null;
+}
+function unexpectedResponse() {
+  return new M365Error("network", "Unexpected answer from the network (captive portal or proxy?). Check your connection.");
+}
+
 function retryAfterSec(r) {
   const v = (r.headers || {})["retry-after"];
   if (!v) return 10;
@@ -439,7 +447,8 @@ function refreshTokens(staleAccess) {
     if (usable && (!staleAccess || t.access_token !== staleAccess)) return t;
     const r = tokenPost({ grant_type: "refresh_token", client_id: CLIENT_ID, refresh_token: t.refresh_token, scope: SCOPES });
     if (r.net) throw netError(r.net);
-    if (r.status === 200 && r.json && r.json.access_token) return saveTokenResponse(r.json, t.refresh_token);
+    if (notJSON(r)) throw unexpectedResponse();
+    if (r.status === 200 && r.json.access_token) return saveTokenResponse(r.json, t.refresh_token);
     if (r.status === 429 || r.status >= 500) throw new M365Error("throttle", "Microsoft sign-in is busy. Try again shortly.", { retryAfter: retryAfterSec(r) });
     const e = aadError(r.json, r.status);
     if (e.kind === "auth" || e.kind === "consent") kcDel(kcAccount()); // the refresh token is dead
@@ -505,7 +514,8 @@ function graph(method, path, opts = {}) {
       throw new M365Error("throttle", "Microsoft Graph asked us to slow down.", { retryAfter: wait });
     }
     if (r.status >= 400) throw graphError(r);
-    return r.json || {};
+    if (notJSON(r)) throw unexpectedResponse();
+    return r.json;
   }
 }
 
@@ -787,7 +797,8 @@ function login() {
     body: formEncode({ client_id: CLIENT_ID, scope: SCOPES }),
   });
   if (r.net) return netError(r.net).message;
-  const j = r.json || {};
+  if (notJSON(r)) return unexpectedResponse().message;
+  const j = r.json;
   if (r.status !== 200 || !j.device_code || !j.user_code) return aadError(j, r.status).message;
   const uri = j.verification_uri || "https://microsoft.com/devicelogin";
   const p = {
@@ -833,7 +844,7 @@ function poll() {
     if (!p || p.id !== id) return; // cancelled or superseded
     if (nowMs() >= p.expires_at || nowMs() >= hardStop) return finish(`The sign-in code expired. Use the ${KW_ACCOUNT} keyword to try again.`);
     const r = tokenPost({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", client_id: CLIENT_ID, device_code: deviceCode });
-    if (r.net) continue; // offline for a moment: keep trying until the code expires
+    if (r.net || notJSON(r)) continue; // offline for a moment: keep trying until the code expires
     const j = r.json || {};
     if (r.status === 200 && j.access_token) {
       if (!j.refresh_token) return finish("Signed in, but Microsoft didn't return a refresh token (offline_access). Sign in again.");
@@ -1487,8 +1498,16 @@ function createPage() {
   const src = env("m365_body_source", "clipboard");
   const body = src === "inline" ? env("m365_body", "") : src === "clipboard" ? clipboardText() : "";
   let page;
+  const post = () => graph("POST", resolveSectionPath(), { body: pageHTML(title, body, clock()), headers: { "Content-Type": "text/html; charset=utf-8" }, timeout: 40 });
   try {
-    page = graph("POST", resolveSectionPath(), { body: pageHTML(title, body, clock()), headers: { "Content-Type": "text/html; charset=utf-8" }, timeout: 40 });
+    try {
+      page = post();
+    } catch (e) {
+      // The cached section list may point at a deleted or moved section: reload it once.
+      if (!(e.status === 404 && ONENOTE_SECTION)) throw e;
+      removePath(cacheFile("onenote-sections"));
+      page = post();
+    }
   } catch (e) {
     if (e.kind === "graph" && e.status === 507) return "That section is full: choose another one in the Workflow’s Configuration";
     return `Couldn't create the page: ${e.message}`;

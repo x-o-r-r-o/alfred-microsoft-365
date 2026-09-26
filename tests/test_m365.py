@@ -1020,6 +1020,41 @@ class AuditTwoTests(Base):
         self.assertFalse(os.path.exists(os.path.join(self.dir, "cache", "user-1")))
 
 
+# ---------------------------------------------------------------- regression tests (audit pass 3)
+
+class AuditThreeTests(Base):
+    def portal_curl(self):
+        path = os.path.join(self.dir, "portal")
+        with open(path, "w") as f:
+            f.write('#!/bin/bash\ncat >/dev/null\nprintf "HTTP/1.1 200 OK\\r\\ncontent-type: text/html\\r\\n\\r\\n<html>Hotel Wi-Fi login</html>"\n')
+        os.chmod(path, 0o755)
+        return path
+
+    def test_captive_portal_is_not_an_empty_result(self):
+        self.sign_in()
+        it = self.sf("teams", M365_TEST_CURL=self.portal_curl())
+        self.assertEqual(it[0]["title"], "You're offline")
+        self.assertIn("captive portal", it[0]["subtitle"])
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "cache", "user-1", "events-2026-09-26.json")))
+        self.assertIn("captive portal", self.act("login", M365_TEST_CURL=self.portal_curl()))
+
+    def test_captive_portal_during_refresh_keeps_the_sign_in(self):
+        self.sign_in(access="AT-old", expires_in=-10, valid=False)
+        it = self.sf("outlook", M365_TEST_CURL=self.portal_curl())
+        self.assertEqual(it[0]["title"], "You're offline")
+        self.assertIsNotNone(self.tokens())
+
+    def test_deleted_section_reloads_the_section_list(self):
+        self.sign_in()
+        MOCK.sections = [{"id": "gone", "displayName": "Inbox", "parentNotebook": {"displayName": "Work"}}]
+        it = self.sf("onenote", "new T")
+        self.item_act(it[0], onenote_section="Work/Inbox")
+        MOCK.sections = [{"id": "moved", "displayName": "Inbox", "parentNotebook": {"displayName": "Work"}}]
+        MOCK.overrides[("POST", "/v1.0/me/onenote/sections/gone/pages")] = [(404, {}, {"error": {"code": "20102", "message": "gone"}})]
+        self.assertEqual(self.item_act(it[0], onenote_section="Work/Inbox"), "Created “T”")
+        self.assertEqual(MOCK.created[-1][0], "/me/onenote/sections/moved/pages")
+
+
 class PlistTests(unittest.TestCase):
     def test_build_and_plist(self):
         subprocess.run([sys.executable, "tools/build.py"], cwd=ROOT, check=True, capture_output=True)
