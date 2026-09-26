@@ -150,7 +150,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, self.page(MOCK.events, 2, q, path))
         if path == "/me/presence":
             return self.send(200, MOCK.presence)
-        if path in ("/me/presence/setUserPreferredPresence", "/me/presence/clearUserPreferredPresence"):
+        if path in ("/me/presence/setUserPreferredPresence", "/me/presence/clearUserPreferredPresence",
+                    "/me/presence/setStatusMessage"):
             return self.send(200, None)
         if path == "/me/people":
             return self.send(200, {"value": MOCK.people})
@@ -611,7 +612,8 @@ class TeamsTests(Base):
         it = self.sf("teams", "status")
         self.assertEqual(it[0]["title"], "Current status: Do not disturb")
         self.assertEqual(it[0]["subtitle"], "Presenting")
-        self.assertEqual(len(it), 8)
+        self.assertEqual(len(it), 9)
+        self.assertEqual(it[1]["autocomplete"], "message ")
         it = self.sf("teams", "status busy 2h")
         self.assertEqual(self.titles(it)[1:], ["Busy"])
         self.assertEqual(it[1]["subtitle"], "Set for 2 hours")
@@ -1243,6 +1245,181 @@ class FinalReviewTests(Base):
         with open(os.path.join(self.dir, "cache", "user-1", "onenote-index.error.json")) as f:
             self.assertEqual(json.load(f)["kind"], "timeout")
         self.assertEqual(MOCK.graph_requests("/v1.0/me/onenote/pages"), [])
+
+
+class RoundFourTests(Base):
+    """Round 4: Alfred's real runtime (minimal environment, paths with spaces, fresh install) and v1.1 features."""
+
+    def alfred_env(self, root, **extra):
+        # What Alfred passes: no LANG/LC_*, no Homebrew on PATH, its own variables, paths with spaces.
+        b = "io.github.x-o-r-r-o.microsoft-365"
+        e = {"HOME": os.environ.get("HOME", "/tmp"), "USER": os.environ.get("USER", ""), "TMPDIR": tempfile.gettempdir(),
+             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+             "alfred_workflow_data": os.path.join(root, "Application Support", "Alfred", "Workflow Data", b),
+             "alfred_workflow_cache": os.path.join(root, "Caches", "com.runningwithcrayons.Alfred", "Workflow Data", b),
+             "alfred_preferences": os.path.join(root, "Mobile Documents", "Alfred.alfredpreferences"),
+             "alfred_version": "5.6", "alfred_version_build": "2290", "alfred_theme_subtext": "3",
+             "alfred_workflow_bundleid": b, "alfred_workflow_name": "Microsoft 365",
+             "alfred_workflow_uid": "user.workflow.1A2B", "alfred_workflow_version": "1.0.0", "alfred_debug": "1",
+             "client_id": " " + CLIENT + " ", "tenant": " common ", "keyword_teams": "Téams", "keyword_onenote": "onenote",
+             "keyword_outlook": "outlook", "keyword_account": "", "teams_open": "app", "onenote_open": "web", "onenote_section": "",
+             "M365_LOGIN_BASE": MOCK.base, "M365_GRAPH_BASE": MOCK.base + "/v1.0",
+             "M365_TEST_KEYCHAIN_DIR": os.path.join(self.dir, "kc"), "M365_TEST_CURL": CURL_WRAP, "M365_ARGV_LOG": ARGV_LOG,
+             "M365_TEST_OPEN_FILE": os.path.join(self.dir, "opened"), "M365_TEST_NOTIFY_FILE": os.path.join(self.dir, "notified"),
+             "M365_TEST_CLIPBOARD_OUT": os.path.join(self.dir, "copied"), "M365_TEST_CLIPBOARD": "", "M365_TEST_APPS": "",
+             "M365_TEST_INTERVAL_SCALE": "0.01"}
+        e.update(extra)
+        return e
+
+    def plist_scripts(self):
+        with open(os.path.join(SRC, "info.plist"), "rb") as f:
+            p = plistlib.load(f)
+        out = {}
+        for o in p["objects"]:
+            c = o["config"]
+            if "script" in c:
+                m = __import__("re").search(r"m365\.js (\w+)", c["script"])
+                out[m.group(1)] = c
+        return out
+
+    def run_alfred(self, cwd, env, name, arg):
+        # Exactly like Alfred: /bin/bash -c <script> with the query as $1 (scriptargtype 1).
+        script = self.plist_scripts()[name]["script"]
+        r = subprocess.run(["/bin/bash", "-c", script, "bash", arg], cwd=cwd, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def test_fresh_install_in_alfreds_environment(self):
+        root = os.path.join(self.dir, "Library with spaces")
+        wf = os.path.join(root, "Mobile Documents", "Alfred.alfredpreferences", "workflows", "user.workflow.1A2B")
+        shutil.copytree(SRC, wf)
+        env = self.alfred_env(root)
+        self.assertFalse(os.path.exists(env["alfred_workflow_data"]))
+        # First keystroke, not signed in yet: the empty keyword setting still gives a sensible hint.
+        data = json.loads(self.run_alfred(wf, env, "teams", ""))
+        validate(data)
+        self.assertEqual(data["items"][0]["title"], "Sign in to Microsoft 365")
+        # Sign in through the real detached poller (no synchronous test shortcut).
+        MOCK.device_queue = ["pending", "ok"]
+        MOCK.devicecode = dict(MOCK.devicecode, interval=1)
+        out = self.run_alfred(wf, dict(env, m365_action="login"), "act", "login")
+        self.assertEqual(out, "Code ABCD-EFGH copied: paste it in the browser to sign in")
+        self.wait_for(lambda: "Signed in as Zoë Tester" in self.read("notified"), timeout=30)
+        with open(os.path.join(env["alfred_workflow_data"], "account.json")) as f:
+            self.assertEqual(json.load(f)["id"], "user-1")
+        # An action that opens a link prints nothing at all, so "only show if populated" hides the notification.
+        self.assertEqual(self.run_alfred(wf, dict(env, m365_action="open"), "act", "https://example.com/x"), "")
+        MOCK.people = [{"displayName": "Anna", "scoredEmailAddresses": [{"address": "anna@contoso.com"}]}]
+        data = json.loads(self.run_alfred(wf, env, "teams", "anna"))
+        validate(data)
+        self.assertEqual(data["items"][-1]["title"], "Anna")
+        # The empty account keyword falls back to the default in messages.
+        MOCK.device_queue = ["expired"]
+        self.run_alfred(wf, dict(env, m365_action="login"), "act", "login")
+        self.wait_for(lambda: "Use the m365 keyword" in self.read("notified"), timeout=30)
+        # Locks and caches live under the paths with spaces.
+        self.assertTrue(os.path.isdir(os.path.join(env["alfred_workflow_cache"], "user-1")))
+
+    def test_upgrade_from_v1_0_0_caches(self):
+        # v1.0.0 presence and event caches (no status message, no location links) still work.
+        self.sign_in()
+        MOCK.events = [ev("Standup", "2026-09-26T10:30:00", "2026-09-26T10:45:00")]
+        self.sf("teams")
+        cache = os.path.join(self.dir, "cache", "user-1")
+        with open(os.path.join(cache, "presence.json"), "w") as f:
+            json.dump({"fetched_at": int(time.time() * 1000), "data": {"availability": "Busy", "activity": "InACall"}}, f)
+        self.assertEqual(self.sf("teams", "status")[0]["title"], "Current status: Busy")
+        self.assertEqual(self.titles(self.sf("teams", "message"))[-1], "Type your status message")
+        self.assertEqual(self.sf("teams")[0]["title"], "Standup")
+
+    def test_network_filters_terminate_the_previous_run(self):
+        subprocess.run([sys.executable, "tools/build.py"], cwd=ROOT, check=True, capture_output=True)
+        s = self.plist_scripts()
+        self.assertEqual(s["teams"]["queuemode"], 2)
+        self.assertEqual(s["outlook"]["queuemode"], 2)
+        self.assertEqual(s["onenote"]["queuemode"], 1)
+        self.assertEqual(s["account"]["queuemode"], 1)
+
+    def test_test_mode_is_loopback_only(self):
+        self.sign_in()
+        port = MOCK.base.rsplit(":", 1)[1]
+        for base in (f"http://localhost:{port}/v1.0", f"http://127.0.0.1.nip.io:{port}/v1.0", f"http://127.0.0.1@graph.invalid:{port}/v1.0"):
+            it = self.sf("outlook", "x", M365_GRAPH_BASE=base)
+            self.assertIn("refusing", it[0]["title"], base)
+        # A proxy from the environment never sees the mock's traffic.
+        MOCK.mails = []
+        it = self.sf("outlook", "x", http_proxy="http://127.0.0.1:9", HTTP_PROXY="http://127.0.0.1:9", ALL_PROXY="http://127.0.0.1:9")
+        self.assertEqual(it[0]["title"], "No mail matches “x”")
+
+    def test_status_message(self):
+        self.sign_in()
+        MOCK.presence = {"availability": "Available", "activity": "Available",
+                         "statusMessage": {"message": {"content": "<p>Out &amp; about</p>", "contentType": "html"}}}
+        it = self.sf("teams", "status")
+        self.assertEqual(it[1]["title"], "Status message: Out & about")
+        it = self.sf("teams", "message")
+        self.assertEqual(self.titles(it), ["Status message: Out & about", "Type your status message", "Clear the status message"])
+        self.assertEqual(self.item_act(it[2]), "Status message cleared")
+        body = json.loads(MOCK.graph_requests("/v1.0/me/presence/setStatusMessage")[-1][4])
+        self.assertEqual(body, {"statusMessage": {"message": {"content": "", "contentType": "text"}}})
+        it = self.sf("teams", 'message Back at 3 "sharp" :: 1h 30m')
+        self.assertEqual(it[0]["title"], 'Set status message “Back at 3 "sharp"”')
+        self.assertEqual(it[0]["subtitle"], "Clears after 1 h 30 min")
+        self.assertEqual(self.item_act(it[0]), "Status message set for 1 h 30 min")
+        body = json.loads(MOCK.graph_requests("/v1.0/me/presence/setStatusMessage")[-1][4])["statusMessage"]
+        self.assertEqual(body["message"], {"content": 'Back at 3 "sharp"', "contentType": "text"})
+        self.assertEqual(body["expiryDateTime"]["timeZone"], "UTC")
+        self.assertRegex(body["expiryDateTime"]["dateTime"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}$")
+        self.assertEqual(self.sf("teams", "message lunch :: soon")[0]["title"], "Unknown duration")
+        self.assertIn("too long", self.sf("teams", "message " + "x" * 281)[0]["title"])
+        it = self.sf("teams", "message lunch")
+        MOCK.overrides[("POST", "/v1.0/me/presence/setStatusMessage")] = [(403, {}, {"error": {"code": "Forbidden", "message": "x"}})]
+        self.assertIn("work or school", self.item_act(it[0]))
+        shutil.copy(os.path.join(self.dir, "kc", KC_FILE), os.path.join(self.dir, "kc", f"oauth_{CLIENT}_consumers.secret"))
+        self.assertIn("work or school", self.sf("teams", "message lunch", tenant="consumers")[0]["title"])
+
+    def test_actions_without_a_message_print_nothing(self):
+        # Straight from osascript (no shell wrapper): not even a newline.
+        self.sign_in()
+        for action, arg in (("open", "https://example.com/x"), ("join", "https://teams.microsoft.com/l/meetup-join/x"), ("cancel-nothing", "")):
+            r = subprocess.run(["osascript", "-l", "JavaScript", "./m365.js", "act", arg], cwd=SRC,
+                               env=dict(self.env, m365_action=action), capture_output=True, timeout=60)
+            self.assertEqual(r.stdout, b"", action)
+        r = subprocess.run(["osascript", "-l", "JavaScript", "./m365.js", "act", "x"], cwd=SRC,
+                           env=dict(self.env, m365_action="copy"), capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.stdout, "Copied x\n")
+
+    def test_ctrl_copies_the_chat_link(self):
+        self.sign_in()
+        MOCK.people = [{"displayName": "Anna", "scoredEmailAddresses": [{"address": "anna+x@contoso.com"}]}]
+        it = self.sf("teams", "anna")
+        self.assertEqual(it[-1]["mods"]["ctrl"]["subtitle"], "Copy the Teams chat link")
+        self.item_act(it[-1], "ctrl")
+        self.assertEqual(self.read("copied"), "https://teams.microsoft.com/l/chat/0/0?users=anna%2Bx%40contoso.com")
+        with open(os.path.join(SRC, "info.plist"), "rb") as f:
+            p = plistlib.load(f)
+        teams = next(o["uid"] for o in p["objects"] if o["config"].get("keyword") == "{var:keyword_teams}")
+        self.assertIn(262144, [c["modifiers"] for c in p["connections"][teams]])
+
+    def test_join_links_from_location_and_body(self):
+        self.sign_in()
+        MOCK.events = [
+            ev("Zoom call", "2026-09-26T11:00:00", "2026-09-26T11:30:00", join=None,
+               location={"displayName": "https://us02web.zoom.us/j/123?pwd=abc)."}),
+            ev("External Teams", "2026-09-26T12:00:00", "2026-09-26T12:30:00", join=None,
+               bodyPreview="Join: https://teams.microsoft.com/l/meetup-join/19%3aext/0 Meeting ID 1"),
+            ev("Lookalike", "2026-09-26T13:00:00", "2026-09-26T13:30:00", join=None,
+               location={"displayName": "https://zoom.us.evil.example/j/1 https://evil.example/?u=https://zoom.us/j/2"}),
+        ]
+        it = self.sf("outlook")
+        by = {i["title"]: i for i in it}
+        self.assertEqual(by["Zoom call"]["mods"]["cmd"]["arg"], "https://us02web.zoom.us/j/123?pwd=abc")
+        self.assertEqual(by["External Teams"]["mods"]["cmd"]["arg"], "https://teams.microsoft.com/l/meetup-join/19%3aext/0")
+        self.assertIs(by["Lookalike"]["mods"]["cmd"]["valid"], False)
+        # Only Teams meetings are listed under the teams keyword, including the one from another organization.
+        self.assertEqual(self.titles(self.sf("teams"))[:1], ["External Teams"])
+        self.item_act(self.sf("teams")[0], M365_TEST_APPS="msteams")
+        self.assertEqual(self.read("opened").splitlines()[-1], "msteams:/l/meetup-join/19%3aext/0")
 
 
 class PlistTests(unittest.TestCase):

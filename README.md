@@ -7,13 +7,14 @@ Join Teams meetings, set your Teams status, chat with people, search OneNote pag
 The workflow signs in with your own app registration, so no third party ever sees your data. Register it once (it takes about five minutes):
 
 1. Open the [Microsoft Entra admin center](https://entra.microsoft.com) and go to **Entra ID** › **App registrations** › **New registration**. Microsoft no longer lets a personal Microsoft account register apps on its own: if you only have a personal account, first create a free Azure account (it comes with a directory), then register the app there. If your organization doesn’t let you register apps, ask an admin to register one for you and give you its client ID.
-2. Name it (for example “Alfred”) and choose the **Supported account types**:
-   * **Accounts in any organizational directory and personal Microsoft accounts** to use the tenant `common`.
-   * **Accounts in this organizational directory only** to use your work or school tenant (you will need its **Directory (tenant) ID**).
-   * **Personal Microsoft accounts only** to use the tenant `consumers`.
-3. Leave **Redirect URI** empty and click **Register**.
+2. Name it (for example “Alfred”) and pick the **Supported account types** from the drop-down:
+   * **Any Entra ID Tenant + Personal Microsoft accounts** to use the tenant `common`.
+   * **Single tenant only** to use your work or school tenant (you will need its **Directory (tenant) ID**).
+   * **Multiple Entra ID tenants** to use the tenant `organizations`.
+   * **Personal accounts only** to use the tenant `consumers`.
+3. Click **Register**. The workflow needs no redirect URI.
 4. Copy the **Application (client) ID** (and the **Directory (tenant) ID** for a single-tenant app) from the **Overview** page.
-5. Open **Authentication**, set **Allow public client flows** to **Yes**, and click **Save**. Sign-in uses the device code flow, which needs this.
+5. Open **Authentication**, then its **Settings** tab, turn on **Allow public client flows** (older layouts show it under **Advanced settings** as **Yes**), and click **Save**. Sign-in uses the device code flow, which needs this.
 6. Open **API permissions** › **Add a permission** › **Microsoft Graph** › **Delegated permissions**, and add `User.Read`, `Calendars.Read`, `Mail.Read`, `Notes.ReadWrite`, `Presence.ReadWrite` and `People.Read`. If your organization doesn’t let users consent to apps, ask an admin to click **Grant admin consent**.
 7. Enter the client ID and the tenant (`common` by default) in the Workflow’s Configuration.
 8. Sign in via the `m365` keyword. Alfred copies a code and opens microsoft.com/devicelogin: paste the code, sign in, and accept the permissions. A notification confirms when you’re signed in.
@@ -24,7 +25,7 @@ If sign-in fails with a Conditional Access error, your organization blocks devic
 
 ## Usage
 
-See today’s Teams meetings via the `teams` keyword, with the ones happening now first. Type to filter them by title or organizer, or to find people.
+See today’s Teams meetings via the `teams` keyword, with the ones happening now first. Meetings from other organizations count too when their join link is in the location or the start of the invitation. Type to filter them by title or organizer, or to find people.
 
 ![Today's Teams meetings](images/teams.png)
 
@@ -39,10 +40,15 @@ Open a chat with someone by typing their name or email address via the `teams` k
 * <kbd>↩</kbd> Open a chat with them in Teams.
 * <kbd>⌘</kbd><kbd>↩</kbd> Copy their email address.
 * <kbd>⌥</kbd><kbd>↩</kbd> Start a video call.
+* <kbd>⌃</kbd><kbd>↩</kbd> Copy the link to your chat with them.
 
 Set your Teams status, optionally for a while, like `status busy`, `status dnd 2h` or `status reset`, via the `teams` keyword. Without a duration, Busy and Do not disturb last a day and the others seven days.
 
 ![Setting the Teams status](images/teams-status.png)
+
+Set the message shown next to your name in Teams, optionally clearing it after a while, like `message Out for lunch` or `message Back at 3 :: 2h`, via the `teams` keyword. Type `message` alone to see or clear the current one.
+
+![Setting a Teams status message](images/teams-message.png)
 
 Search the titles of your OneNote pages across every notebook via the `onenote` keyword. Leave it empty for recently edited pages.
 
@@ -65,7 +71,7 @@ See today’s agenda via the `outlook` keyword, or type to search your mail. Sea
 ![Today's agenda and mail search](images/outlook.png)
 
 * <kbd>↩</kbd> Open the event or message in Outlook on the web.
-* <kbd>⌘</kbd><kbd>↩</kbd> Join an event’s online meeting, or copy a message’s sender address.
+* <kbd>⌘</kbd><kbd>↩</kbd> Join an event’s online meeting (Teams, or a Zoom, Google Meet or Webex link in the location or invitation), or copy a message’s sender address.
 
 Sign in, sign out, or refresh cached data via the `m365` keyword.
 

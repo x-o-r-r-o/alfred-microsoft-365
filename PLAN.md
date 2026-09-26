@@ -18,6 +18,11 @@ Raycast demand this workflow replaces (downloads, 2026-09-26):
 - [x] `onenote` search pages, create quick note in default section
 - [x] `outlook` search mail, today's calendar
 
+## Features (v1.1, round 4)
+- [x] Teams status message: `teams message <text> [:: duration]`, shown and clearable from `teams message` / `teams status` (Presence.ReadWrite, work or school accounts only)
+- [x] ⌃↩ on a person copies the Teams chat link (requested in raycast/extensions#16808)
+- [x] Join links for meetings without `onlineMeeting` (other organizations' Teams invites, Zoom, Google Meet, Webex, GoTo, Whereby, Chime) from the location or the body preview; lookalike hosts are ignored
+
 ## Status
 Implemented and tested against a local mock of the Microsoft identity platform and Graph
 (`python3 tests/test_m365.py`). Not yet verified against a live tenant; needs the user's own
@@ -28,7 +33,7 @@ Entra ID app registration (README ## Setup). Keyword for sign-in is `m365` (the 
 - OneNote search matches page titles only (Graph has no full-text page search); the index holds the 5,000 most recently edited pages and refreshes every 30 minutes.
 - Teams status needs a work or school account, and only shows while the user is signed in to a Teams app.
 - Chat and call links use teams.microsoft.com; personal (teams.live.com) accounts may not open them.
-- Rate limiting: Alfred's automatic queue delay plus "terminate previous script", a per-query cache and a shared back-off after 429 keep requests low; there is no request budget beyond that (Graph's per-app limits are far above keystroke rates).
+- Rate limiting: Alfred's automatic queue delay plus "terminate previous script" (`queuemode` 2 on the `teams` and `outlook` filters since v1.1; v1.0.0 shipped `queuemode` 1, "wait"), a per-query cache and a shared back-off after 429 keep requests low; there is no request budget beyond that (Graph's per-app limits are far above keystroke rates).
 - The device code poller receives the device code in its environment (visible to the same user's `ps -E` for up to 15 minutes); tokens themselves never leave the Keychain except on curl's stdin.
 
 ## Verify in real Alfred
@@ -39,7 +44,12 @@ Entra ID app registration (README ## Setup). Keyword for sign-in is `m365` (the 
 - [ ] OneNote index on a large account (section-by-section fallback), `onenote:` links open the app, new pages land in the configured section.
 - [ ] Mail search with `from:` / `subject:` syntax; the webLink opens the message.
 - [ ] Holding ⌘/⌥ on rows without that modifier behaves sensibly (Outlook mail has no ⌥ action).
-- [ ] Screenshots for every README paragraph.
+- [ ] Status message with and without `:: 2h`; the message and its expiry show in Teams; clearing works.
+- [ ] ⌃↩ on a person copies a chat link that opens the chat.
+- [ ] A Zoom/Meet invitation and a Teams invitation from another organization show a working ⌘↩ join in `outlook`.
+- [ ] Typing fast in `outlook` / `teams` terminates the previous search (queuemode 2) without leaving stale locks.
+- [ ] No empty notification after ↩ on a meeting, page or mail (actions print nothing).
+- [ ] Screenshots for every README paragraph (including `images/teams-message.png`).
 
 ## Tech
 - **Stack:** zsh + JXA; Microsoft Graph with device-code OAuth.
@@ -70,3 +80,21 @@ Sources: alfred.app/submit, alfred.app/submit/styleguide, alfred.app/submit/scre
 - [ ] AI assistance disclosed in the README and the forum post (README done; forum post pending)
 - [ ] Version bumped in `workflow.json`; `python3 tools/build.py --package`; GitHub release with the `.alfredworkflow` attached
 - [ ] Forum post in "Share your Workflows" with a screenshot, keywords, and the GitHub link
+
+## Round 4 notes (post-release audit)
+- `tools/build.py` now reads an optional `queuemode` per Script Filter (default 1, as before). Port this to the canonical copy in alfred-devtoolbox so the next sync doesn't drop it.
+- Verified against official alfredapp plists: network Script Filters (google-drive, *-suggest) use `queuemode` 2 = terminate; local ones use 1 = wait.
+- README Setup re-checked against Microsoft Learn (quickstart-register-app, updated 2026-06): the account-type drop-down now reads “Single tenant only / Multiple Entra ID tenants / Any Entra ID Tenant + Personal Microsoft accounts / Personal accounts only”, the registration form no longer asks for a redirect URI, and “Allow public client flows” is on the Authentication page's **Settings** tab.
+- macOS 13: all JXA features (Unicode property escapes, NSTask `launchAndReturnError`, Security framework, NSDateFormatter templates) and curl config options used are available on macOS 13.0; no change needed.
+
+## Ideas for v1.1
+Ranked by value for effort (not implemented yet):
+1. Recent chats list (`teams` with an empty query or `chat`): needs `Chat.Read`, one more consent; the Raycast extension's most used command is "Find Chat".
+2. Tomorrow's agenda / next working day when today's meetings are over (`outlook tomorrow` would clash with mail search, so it needs a prefix like `agenda`).
+3. A Hotkey (unset by default) that joins the meeting happening now or next.
+4. Mail search ⌥↩: reply or forward on the web (`webLink` + `&action=reply` isn't documented; needs a live check).
+5. Mark a mail as read from the result list (`Mail.ReadWrite`: a broader permission, so optional).
+6. OneNote: full-text search is still impossible through Graph (`$search` on pages was beta-only and removed); a local index of page content would need `Notes.Read` downloads of every page, too slow and heavy for 5,000 pages. Users ask for it (raycast/extensions#23268).
+7. Show the other person's presence next to people results (`Presence.Read.All`, which some tenants restrict to admin consent).
+8. Out-of-office auto-reply on/off (`MailboxSettings.ReadWrite`).
+

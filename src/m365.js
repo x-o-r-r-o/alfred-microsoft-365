@@ -51,8 +51,9 @@ const SCOPES = [
 const TEAMS_OPEN = env("teams_open", "app");
 const ONENOTE_OPEN = env("onenote_open", "app");
 const ONENOTE_SECTION = env("onenote_section", "").trim();
-const KW_ACCOUNT = env("keyword_account", "m365");
-const KW_ONENOTE = env("keyword_onenote", "onenote");
+// A required keyword can still arrive empty (or padded) from the Workflow Configuration.
+const KW_ACCOUNT = env("keyword_account", "").trim() || "m365";
+const KW_ONENOTE = env("keyword_onenote", "").trim() || "onenote";
 let BACKGROUND = false; // true inside background jobs: allows longer Retry-After waits
 // Background refreshes stop starting requests after this, so they always finish well within their
 // lock's 300 s expiry (worst case: one token refresh of 40 s and one request of 20 s after it).
@@ -349,12 +350,15 @@ function http(method, url, { headers = {}, body = null, timeout = 20 } = {}) {
   if (TEST_MODE) {
     testOnly("M365_LOGIN_BASE");
     testOnly("M365_GRAPH_BASE");
-    // Only the local mock: never Microsoft, whatever the overrides say.
-    const local = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//i.test(url);
+    // Only the local mock: never Microsoft, whatever the overrides say. Loopback literals only:
+    // "localhost" can be remapped in /etc/hosts.
+    const local = /^https?:\/\/(127(?:\.\d{1,3}){3}|\[::1\])(:\d+)?\//i.test(url);
     if (!local || (!sameOrigin(url, LOGIN_BASE) && !sameOrigin(url, GRAPH_BASE))) throw new M365Error("graph", `Test mode: refusing to request ${url}`);
   }
   const lines = ["silent", "include", "globoff", `url = ${cfgQuote(url)}`, `request = ${cfgQuote(method)}`,
     `max-time = ${timeout}`, "connect-timeout = 8", 'header = "Expect:"'];
+  // Test mode: a proxy from the environment (http_proxy, ALL_PROXY…) must not see the mock's traffic.
+  if (TEST_MODE) lines.push('noproxy = "*"');
   for (const [k, v] of Object.entries(headers)) lines.push(`header = ${cfgQuote(`${k}: ${String(v).replace(/[\r\n]+/g, " ")}`)}`);
   if (body !== null) {
     // data-binary would read a file for a leading "@"; our bodies are JSON, forms or HTML.
@@ -669,7 +673,7 @@ function spawnDetached(args, extraEnv = {}) {
   const task = $.NSTask.alloc.init;
   task.executableURL = $.NSURL.fileURLWithPath("/bin/bash");
   // set -m puts the job in its own process group, so it survives Alfred killing the Script Filter's group.
-  task.arguments = ["-c", 'set -m; nohup /usr/bin/osascript -l JavaScript "$0" "$@" </dev/null >/dev/null 2>&1 &', scriptPath()].concat(args);
+  task.arguments = ["-c", 'set -m; /usr/bin/nohup /usr/bin/osascript -l JavaScript "$0" "$@" </dev/null >/dev/null 2>&1 &', scriptPath()].concat(args);
   const e = ObjC.deepUnwrap(ENV) || {};
   Object.assign(e, extraEnv);
   task.environment = $(e);
@@ -1039,7 +1043,7 @@ function dayRange(d) {
 
 function fetchEvents(day) {
   const [start, end] = dayRange(day);
-  const select = "id,subject,start,end,isAllDay,isCancelled,isOnlineMeeting,onlineMeeting,onlineMeetingProvider,onlineMeetingUrl,webLink,location,organizer,responseStatus";
+  const select = "id,subject,start,end,isAllDay,isCancelled,isOnlineMeeting,onlineMeeting,onlineMeetingProvider,onlineMeetingUrl,webLink,location,organizer,responseStatus,bodyPreview";
   const path = `/me/calendarView?startDateTime=${encodeURIComponent(start.toISOString())}&endDateTime=${encodeURIComponent(end.toISOString())}` +
     `&$select=${select}&$orderby=start/dateTime&$top=50`;
   const raw = graphAll(path, { maxPages: 10, headers: { Prefer: 'outlook.timezone="UTC"' } });
@@ -1047,7 +1051,7 @@ function fetchEvents(day) {
   const out = [];
   for (const e of raw) {
     if (e.isCancelled) continue;
-    const join = (e.onlineMeeting && e.onlineMeeting.joinUrl) || e.onlineMeetingUrl || "";
+    const join = (e.onlineMeeting && e.onlineMeeting.joinUrl) || e.onlineMeetingUrl || meetingLinkIn(e);
     const ev = {
       id: e.id,
       subject: e.subject || "",
@@ -1075,6 +1079,21 @@ function fetchEvents(day) {
   }
   out.sort((a, b) => (a.allDay === b.allDay ? (a.start || 0) - (b.start || 0) : a.allDay ? -1 : 1));
   return out;
+}
+
+// Invitations from other organizations and other meeting services (Zoom, Google Meet, Webex…) often
+// have no onlineMeeting: their join link is in the location or at the start of the body.
+const MEETING_HOSTS = /^https:\/\/(?:[a-z0-9-]+\.)*(?:teams\.microsoft\.com|teams\.live\.com|teams\.cloud\.microsoft|zoom\.us|zoomgov\.com|meet\.google\.com|webex\.com|gotomeeting\.com|meet\.goto\.com|whereby\.com|chime\.aws)(?:[/?#]|$)/i;
+function meetingLinkIn(e) {
+  const loc = e.location || {};
+  const texts = [loc.displayName, loc.locationUri, e.bodyPreview];
+  for (const t of texts) {
+    for (const u of String(t || "").match(/https:\/\/[^\s<>"'\u00A0]+/gi) || []) {
+      const url = u.replace(/[)\].,;:!?>]+$/, "");
+      if (MEETING_HOSTS.test(url) && isHttpUrl(url)) return url;
+    }
+  }
+  return "";
 }
 
 function todayEvents() {
@@ -1173,7 +1192,13 @@ function humanDuration(mins) {
 
 function fetchPresence() {
   const p = graph("GET", "/me/presence");
-  return { availability: p.availability || "", activity: p.activity || "" };
+  const m = (p.statusMessage && p.statusMessage.message) || {};
+  let text = String(m.content || "");
+  if (String(m.contentType || "").toLowerCase() === "html") {
+    text = text.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+  }
+  return { availability: p.availability || "", activity: p.activity || "", message: oneLine(text, 280) };
 }
 function readable(s) {
   return String(s || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase()).replace(/ ([A-Z])/g, (m, c) => " " + c.toLowerCase());
@@ -1204,10 +1229,12 @@ function statusItems(rest) {
         : cur.data.activity && cur.data.activity !== a ? readable(cur.data.activity) : "";
       rows.push(info(`Current status: ${readable(a)}`, sub, "presence-" + presenceIcon(a)));
     }
+    if (cur.data && cur.data.message) rows.push(info(`Status message: ${cur.data.message}`, "Change or clear it with “message”", "info"));
   } catch (e) {
     if (["auth", "network", "keychain"].includes(e.kind)) return errorItems(e);
     rows.push(info("Couldn't read your status", presenceHint(e), "error"));
   }
+  if (!wanted && !mins) rows.push(Object.assign(info("Set a status message…", "Shows next to your name in Teams, like “message Out for lunch :: 1h”", "info"), { autocomplete: "message ", valid: false }));
   if (!matches.length) {
     rows.push(info("Unknown status", "Try available, busy, dnd, brb, away, offline or reset, optionally followed by a duration like 2h", "error"));
     return rows;
@@ -1253,6 +1280,54 @@ function setPresence(key, mins) {
   return `Status set to ${p.label} ${mins ? `for ${humanDuration(mins)}` : `(expires in ${dflt})`}`;
 }
 
+const STATUS_MESSAGE_MAX = 280; // Teams' limit
+function statusMessageItems(rest) {
+  if (PERSONAL_ONLY) return [info("Teams status messages need a work or school account", "Personal Microsoft accounts (tenant “consumers”) have no presence", "presence-offline")];
+  const m = rest.match(/^([\s\S]*?)\s*::\s*(.*)$/);
+  const text = clean(m ? m[1] : rest).replace(/\s+/g, " ").trim();
+  let mins = null;
+  if (m && m[2].trim()) {
+    mins = parseDuration(m[2]);
+    if (mins === null) return [info("Unknown duration", "Add a duration after “::” like 30m, 2h or 1d", "error")];
+    mins = Math.min(mins, 7 * 1440);
+  }
+  const rows = [];
+  let current = "";
+  try {
+    current = (swr("presence", 60).data || {}).message || "";
+  } catch (e) {
+    if (["auth", "network", "keychain"].includes(e.kind)) return errorItems(e);
+  }
+  if (!text) {
+    if (current) rows.push(info(`Status message: ${current}`, "Type a new message to replace it", "info"));
+    rows.push(info("Type your status message", "Add “:: 2h” to clear it after a while", "info"));
+    if (current) rows.push(row("Clear the status message", "Removes the message next to your name in Teams", "presence-reset", "status-message", "clear", { m365_message: "", m365_minutes: "" }));
+    return rows;
+  }
+  if ([...text].length > STATUS_MESSAGE_MAX) return [info(`The message is too long (${[...text].length} of ${STATUS_MESSAGE_MAX} characters)`, "Teams allows 280 characters", "error")];
+  const sub = mins ? `Clears after ${humanDuration(mins)}` : "Shows next to your name in Teams until you change it · add “:: 2h” to clear it after a while";
+  rows.push(row(`Set status message “${text}”`, sub, "info", "status-message", text, { m365_message: text, m365_minutes: mins ? String(mins) : "" }));
+  return rows;
+}
+
+function setStatusMessage(text, mins) {
+  const msg = String(text || "").trim();
+  const body = { statusMessage: { message: { content: msg, contentType: "text" } } };
+  if (msg && mins) {
+    // dateTime without a zone designator, interpreted in timeZone.
+    body.statusMessage.expiryDateTime = { dateTime: new Date(nowMs() + mins * 60000).toISOString().replace(/Z$/, ""), timeZone: "UTC" };
+  }
+  try {
+    graph("POST", "/me/presence/setStatusMessage", { json: body });
+  } catch (e) {
+    if (e.kind === "graph" || e.kind === "consent") return `Couldn't set your status message: ${presenceHint(e)}`;
+    return e.message === "Not signed in" ? `Sign in first via the ${KW_ACCOUNT} keyword` : e.message;
+  }
+  removePath(cacheFile("presence"));
+  if (!msg) return "Status message cleared";
+  return `Status message set${mins ? ` for ${humanDuration(mins)}` : ""}`;
+}
+
 // $search values are KQL phrases in double quotes; escape backslashes and quotes.
 function searchParam(q) {
   return encodeURIComponent(`"${q.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
@@ -1288,6 +1363,7 @@ function personRow(p) {
     { m365_app_url: l.app, m365_web_url: l.web },
     {
       cmd: { action: "copy", arg: p.email, subtitle: `Copy ${p.email}` },
+      ctrl: { action: "copy", arg: l.web, subtitle: "Copy the Teams chat link" },
       alt: { action: "chat", arg: call, subtitle: "Start a video call", vars: { m365_app_url: call.replace("https://teams.microsoft.com", "msteams:"), m365_web_url: call } },
     }, { text: { copy: p.email, largetype: p.name } });
 }
@@ -1298,6 +1374,8 @@ function teamsItems(query) {
   const q = query.trim();
   const sm = q.match(/^(status|presence)\b\s*(.*)$/i);
   if (sm) return { items: statusItems(sm[2]) };
+  const mm = q.match(/^message\b\s*([\s\S]*)$/i);
+  if (mm) return { items: statusMessageItems(mm[1]) };
   const now = clock();
   const rows = [];
   let extra = {};
@@ -1676,6 +1754,8 @@ function act(arg) {
         return `Copied ${oneLine(arg, 60)}`;
       case "presence":
         return setPresence(env("m365_presence", arg), Number(env("m365_minutes", "")) || null);
+      case "status-message":
+        return setStatusMessage(env("m365_message", ""), Number(env("m365_minutes", "")) || null);
       case "create-page":
         return createPage();
       default:
@@ -1695,9 +1775,11 @@ function act(arg) {
 function run(argv) {
   const cmd = argv[0] || "";
   const query = argv[1] || "";
-  if (cmd === "act") return act(query);
-  if (cmd === "poll") return poll(), "";
-  if (cmd === "refresh") return refreshJob(query), "";
+  // osascript prints "\n" for an empty string but nothing for undefined: an action without a message
+  // must print nothing, or the Notification ("only show if populated") may pop up empty.
+  if (cmd === "act") return act(query) || undefined;
+  if (cmd === "poll") return void poll();
+  if (cmd === "refresh") return void refreshJob(query);
   const filters = { teams: teamsItems, outlook: outlookItems, onenote: onenoteItems, account: accountItems };
   const fn = Object.prototype.hasOwnProperty.call(filters, cmd) ? filters[cmd] : null;
   if (!fn) return output([info(`Unknown command ${cmd}`, "", "error")]);

@@ -31,7 +31,9 @@ def scriptfilter(o):
         "queuedelaycustom": 3,
         "queuedelayimmediatelyinitially": True,
         "queuedelaymode": o.get("queuedelaymode", 0),
-        "queuemode": 1,
+        # 1 = wait until the previous script finishes, 2 = terminate it (network searches:
+        # alfredapp/google-drive-workflow and the *-suggest workflows use 2)
+        "queuemode": o.get("queuemode", 1),
         "runningsubtext": o.get("running", "…"),
         "script": o["script"],
         "scriptargtype": 1,

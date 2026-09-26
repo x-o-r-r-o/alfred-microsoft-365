@@ -140,6 +140,7 @@
       "subtext": "Join today's meetings, set your status or chat with someone",
       "script": "osascript -l JavaScript ./m365.js teams \"$1\"",
       "queuedelaymode": 1,
+      "queuemode": 2,
       "running": "Asking Microsoft 365…"
     },
     {
@@ -160,6 +161,7 @@
       "subtext": "Today's agenda, or type to search mail",
       "script": "osascript -l JavaScript ./m365.js outlook \"$1\"",
       "queuedelaymode": 1,
+      "queuemode": 2,
       "running": "Asking Microsoft 365…"
     },
     {
@@ -175,7 +177,7 @@
     {
       "id": "act",
       "type": "script",
-      "script": "osascript -l JavaScript ./m365.js act \"$1\"",
+      "script": "out=$(osascript -l JavaScript ./m365.js act \"$1\"); printf '%s' \"$out\"",
       "note": "Runs the action named by $m365_action"
     },
     {
@@ -203,6 +205,11 @@
       "from": "sf_teams",
       "to": "act",
       "mod": "alt"
+    },
+    {
+      "from": "sf_teams",
+      "to": "act",
+      "mod": "ctrl"
     },
     {
       "from": "sf_onenote",
