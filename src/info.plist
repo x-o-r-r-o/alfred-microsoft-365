@@ -7,48 +7,578 @@
 	<key>category</key>
 	<string>Productivity</string>
 	<key>connections</key>
-	<dict/>
+	<dict>
+		<key>04798C87-9EFA-54CC-B4DA-21E761A983CD</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>F54A9F29-B043-566E-A7C8-FADDCB353B0B</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>F54A9F29-B043-566E-A7C8-FADDCB353B0B</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>71226D6D-A413-5DF2-ABD5-AD4FF97A0C45</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>1048576</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>524288</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>904A0A3B-4490-5DC4-A716-18B80550141B</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>1048576</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>524288</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>A292BFF6-FD33-538D-9889-40140512C470</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>1048576</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>524288</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>B2D6A3FC-4FFF-5F65-A14A-608A75F5F454</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>1048576</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+				<key>modifiers</key>
+				<integer>524288</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+	</dict>
 	<key>createdby</key>
 	<string>x-o-r-r-o</string>
 	<key>description</key>
-	<string>Microsoft Teams, OneNote and Outlook via Microsoft Graph.</string>
+	<string>Join Teams meetings, set your status, chat, search OneNote and Outlook mail</string>
+	<key>disabled</key>
+	<false/>
 	<key>name</key>
 	<string>Microsoft 365</string>
 	<key>objects</key>
-	<array/>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<false/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>{var:keyword_teams}</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>1</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>Asking Microsoft 365…</string>
+				<key>script</key>
+				<string>osascript -l JavaScript ./m365.js teams "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>skipuniversalaction</key>
+				<true/>
+				<key>subtext</key>
+				<string>Join today's meetings, set your status or chat with someone</string>
+				<key>title</key>
+				<string>Microsoft Teams</string>
+				<key>type</key>
+				<integer>0</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>904A0A3B-4490-5DC4-A716-18B80550141B</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<false/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>{var:keyword_onenote}</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>0</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>Asking Microsoft 365…</string>
+				<key>script</key>
+				<string>osascript -l JavaScript ./m365.js onenote "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>skipuniversalaction</key>
+				<true/>
+				<key>subtext</key>
+				<string>Search page titles or create a page</string>
+				<key>title</key>
+				<string>OneNote</string>
+				<key>type</key>
+				<integer>0</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>B2D6A3FC-4FFF-5F65-A14A-608A75F5F454</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<false/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>{var:keyword_outlook}</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>1</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>Asking Microsoft 365…</string>
+				<key>script</key>
+				<string>osascript -l JavaScript ./m365.js outlook "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>skipuniversalaction</key>
+				<true/>
+				<key>subtext</key>
+				<string>Today's agenda, or type to search mail</string>
+				<key>title</key>
+				<string>Outlook</string>
+				<key>type</key>
+				<integer>0</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>71226D6D-A413-5DF2-ABD5-AD4FF97A0C45</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<false/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>{var:keyword_account}</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>0</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>Asking Microsoft 365…</string>
+				<key>script</key>
+				<string>osascript -l JavaScript ./m365.js account "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>skipuniversalaction</key>
+				<true/>
+				<key>subtext</key>
+				<string>Sign in or out</string>
+				<key>title</key>
+				<string>Microsoft 365 Account</string>
+				<key>type</key>
+				<integer>0</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>A292BFF6-FD33-538D-9889-40140512C470</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>osascript -l JavaScript ./m365.js act "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>lastpathcomponent</key>
+				<false/>
+				<key>onlyshowifquerypopulated</key>
+				<true/>
+				<key>removeextension</key>
+				<false/>
+				<key>text</key>
+				<string>{query}</string>
+				<key>title</key>
+				<string>{var:alfred_workflow_name}</string>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.output.notification</string>
+			<key>uid</key>
+			<string>F54A9F29-B043-566E-A7C8-FADDCB353B0B</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>availableviaurlhandler</key>
+				<false/>
+				<key>triggerid</key>
+				<string>notify</string>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.trigger.external</string>
+			<key>uid</key>
+			<string>04798C87-9EFA-54CC-B4DA-21E761A983CD</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+	</array>
 	<key>readme</key>
-	<string># Microsoft 365
+	<string>## Usage
 
-Microsoft Teams, OneNote and Outlook via Microsoft Graph.
+See today’s Teams meetings via the `teams` keyword, with the ones happening now first. Type to filter them by title or organizer, or to find people.
 
-&gt; **Status:** planned — not yet functional. See [PLAN.md](PLAN.md).
+* &lt;kbd&gt;↩&lt;/kbd&gt; Join the meeting in the Teams app (or the browser, set in the Workflow’s Configuration).
+* &lt;kbd&gt;⌘&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Copy the join link.
+* &lt;kbd&gt;⌥&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Open the event in Outlook.
 
-## Usage
+Open a chat with someone by typing their name after the keyword.
 
-Microsoft Teams, OneNote and Outlook via Microsoft Graph via the `teams` keyword.
+* &lt;kbd&gt;↩&lt;/kbd&gt; Open a chat with them in Teams.
+* &lt;kbd&gt;⌘&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Copy their email address.
+* &lt;kbd&gt;⌥&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Start a video call.
 
-![Microsoft 365 results in Alfred](images/teams.png)
+Set your Teams status with `teams status`, like `teams status busy`, `teams status dnd 2h` or `teams status reset`. Without a duration, Busy and Do not disturb last a day and the others seven days.
 
-* &lt;kbd&gt;↩&lt;/kbd&gt; Primary action.
-* &lt;kbd&gt;⌘&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Secondary action.
-* &lt;kbd&gt;⌘&lt;/kbd&gt;&lt;kbd&gt;Y&lt;/kbd&gt; Quick Look.
+Search the titles of your OneNote pages across every notebook via the `onenote` keyword. Leave it empty for recently edited pages.
+
+* &lt;kbd&gt;↩&lt;/kbd&gt; Open the page in the OneNote app (or on the web, set in the Workflow’s Configuration).
+* &lt;kbd&gt;⌘&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Open the page in OneNote on the web.
+* &lt;kbd&gt;⌥&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Copy the web link.
+
+Create a page with `onenote new` followed by its title. The clipboard becomes the page’s text, or type it after `::`, like `onenote new Ideas :: call the printer shop`. Pages go to your default section, or to the section set in the Workflow’s Configuration.
+
+* &lt;kbd&gt;↩&lt;/kbd&gt; Create the page.
+* &lt;kbd&gt;⌘&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Create the page and open it.
+* &lt;kbd&gt;⌥&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Create an empty page.
+
+See today’s agenda via the `outlook` keyword, or type to search your mail. Search accepts Outlook’s syntax, like `from:anna` or `subject:invoice`.
+
+* &lt;kbd&gt;↩&lt;/kbd&gt; Open the event or message in Outlook on the web.
+* &lt;kbd&gt;⌘&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Join an event’s online meeting, or copy a message’s sender address.
+
+Sign in, sign out, or refresh cached data via the `m365` keyword.
 
 Every keyword can be changed in the Workflow’s Configuration.
-
-## Development
-
-```bash
-./build.sh   # -&gt; dist/alfred-microsoft-365-&lt;version&gt;.alfredworkflow
-```
-
-## AI disclosure
-
-This workflow is developed with the help of Claude (Anthropic), an AI assistant. All code is reviewed and tested by the author.
 </string>
 	<key>uidata</key>
-	<dict/>
+	<dict>
+		<key>04798C87-9EFA-54CC-B4DA-21E761A983CD</key>
+		<dict>
+			<key>note</key>
+			<string>Used by background jobs (sign-in poller)</string>
+			<key>xpos</key>
+			<integer>30</integer>
+			<key>ypos</key>
+			<integer>540</integer>
+		</dict>
+		<key>33FA2FD9-DB3B-52E2-A32C-EB071B0664A7</key>
+		<dict>
+			<key>note</key>
+			<string>Runs the action named by $m365_action</string>
+			<key>xpos</key>
+			<integer>250</integer>
+			<key>ypos</key>
+			<integer>20</integer>
+		</dict>
+		<key>71226D6D-A413-5DF2-ABD5-AD4FF97A0C45</key>
+		<dict>
+			<key>xpos</key>
+			<integer>30</integer>
+			<key>ypos</key>
+			<integer>280</integer>
+		</dict>
+		<key>904A0A3B-4490-5DC4-A716-18B80550141B</key>
+		<dict>
+			<key>xpos</key>
+			<integer>30</integer>
+			<key>ypos</key>
+			<integer>20</integer>
+		</dict>
+		<key>A292BFF6-FD33-538D-9889-40140512C470</key>
+		<dict>
+			<key>xpos</key>
+			<integer>30</integer>
+			<key>ypos</key>
+			<integer>410</integer>
+		</dict>
+		<key>B2D6A3FC-4FFF-5F65-A14A-608A75F5F454</key>
+		<dict>
+			<key>xpos</key>
+			<integer>30</integer>
+			<key>ypos</key>
+			<integer>150</integer>
+		</dict>
+		<key>F54A9F29-B043-566E-A7C8-FADDCB353B0B</key>
+		<dict>
+			<key>xpos</key>
+			<integer>470</integer>
+			<key>ypos</key>
+			<integer>20</integer>
+		</dict>
+	</dict>
 	<key>userconfigurationconfig</key>
 	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string></string>
+				<key>placeholder</key>
+				<string>00000000-0000-0000-0000-000000000000</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>From your app registration in Microsoft Entra ID (see the setup guide)</string>
+			<key>label</key>
+			<string>Application (client) ID</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>client_id</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>common</string>
+				<key>placeholder</key>
+				<string>common</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>common, organizations, consumers, or your Directory (tenant) ID</string>
+			<key>label</key>
+			<string>Tenant</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>tenant</string>
+		</dict>
 		<dict>
 			<key>config</key>
 			<dict>
@@ -62,9 +592,9 @@ This workflow is developed with the help of Claude (Anthropic), an AI assistant.
 				<true/>
 			</dict>
 			<key>description</key>
-			<string></string>
+			<string>Teams meetings, status and people</string>
 			<key>label</key>
-			<string>Teams keyword</string>
+			<string>Keywords</string>
 			<key>type</key>
 			<string>textfield</string>
 			<key>variable</key>
@@ -83,7 +613,7 @@ This workflow is developed with the help of Claude (Anthropic), an AI assistant.
 				<true/>
 			</dict>
 			<key>description</key>
-			<string></string>
+			<string>OneNote pages</string>
 			<key>label</key>
 			<string></string>
 			<key>type</key>
@@ -104,7 +634,7 @@ This workflow is developed with the help of Claude (Anthropic), an AI assistant.
 				<true/>
 			</dict>
 			<key>description</key>
-			<string></string>
+			<string>Outlook agenda and mail</string>
 			<key>label</key>
 			<string></string>
 			<key>type</key>
@@ -112,9 +642,107 @@ This workflow is developed with the help of Claude (Anthropic), an AI assistant.
 			<key>variable</key>
 			<string>keyword_outlook</string>
 		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>m365</string>
+				<key>placeholder</key>
+				<string>m365</string>
+				<key>required</key>
+				<true/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>Sign in and out</string>
+			<key>label</key>
+			<string></string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>keyword_account</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>app</string>
+				<key>pairs</key>
+				<array>
+					<array>
+						<string>Microsoft Teams app</string>
+						<string>app</string>
+					</array>
+					<array>
+						<string>Web browser</string>
+						<string>web</string>
+					</array>
+				</array>
+			</dict>
+			<key>description</key>
+			<string></string>
+			<key>label</key>
+			<string>Open Teams links in</string>
+			<key>type</key>
+			<string>popupbutton</string>
+			<key>variable</key>
+			<string>teams_open</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>app</string>
+				<key>pairs</key>
+				<array>
+					<array>
+						<string>OneNote app</string>
+						<string>app</string>
+					</array>
+					<array>
+						<string>OneNote on the web</string>
+						<string>web</string>
+					</array>
+				</array>
+			</dict>
+			<key>description</key>
+			<string></string>
+			<key>label</key>
+			<string>Open OneNote pages in</string>
+			<key>type</key>
+			<string>popupbutton</string>
+			<key>variable</key>
+			<string>onenote_open</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string></string>
+				<key>placeholder</key>
+				<string>Quick Notes</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>A section name or Notebook/Section. Leave empty for your default section.</string>
+			<key>label</key>
+			<string>New pages go to</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>onenote_section</string>
+		</dict>
 	</array>
+	<key>variables</key>
+	<dict/>
+	<key>variablesdontexport</key>
+	<array/>
 	<key>version</key>
-	<string>0.1.0</string>
+	<string>1.0.0</string>
 	<key>webaddress</key>
 	<string>https://github.com/x-o-r-r-o/alfred-microsoft-365</string>
 </dict>

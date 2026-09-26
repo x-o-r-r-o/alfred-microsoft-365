@@ -1,0 +1,258 @@
+{
+  "bundleid": "io.github.x-o-r-r-o.microsoft-365",
+  "name": "Microsoft 365",
+  "description": "Join Teams meetings, set your status, chat, search OneNote and Outlook mail",
+  "category": "Productivity",
+  "createdby": "x-o-r-r-o",
+  "webaddress": "https://github.com/x-o-r-r-o/alfred-microsoft-365",
+  "version": "1.0.0",
+  "variablesdontexport": [],
+  "config": [
+    {
+      "type": "textfield",
+      "variable": "client_id",
+      "label": "Application (client) ID",
+      "description": "From your app registration in Microsoft Entra ID (see the setup guide)",
+      "config": {
+        "default": "",
+        "placeholder": "00000000-0000-0000-0000-000000000000",
+        "required": false,
+        "trim": true
+      }
+    },
+    {
+      "type": "textfield",
+      "variable": "tenant",
+      "label": "Tenant",
+      "description": "common, organizations, consumers, or your Directory (tenant) ID",
+      "config": {
+        "default": "common",
+        "placeholder": "common",
+        "required": false,
+        "trim": true
+      }
+    },
+    {
+      "type": "textfield",
+      "variable": "keyword_teams",
+      "label": "Keywords",
+      "description": "Teams meetings, status and people",
+      "config": {
+        "default": "teams",
+        "placeholder": "teams",
+        "required": true,
+        "trim": true
+      }
+    },
+    {
+      "type": "textfield",
+      "variable": "keyword_onenote",
+      "label": "",
+      "description": "OneNote pages",
+      "config": {
+        "default": "onenote",
+        "placeholder": "onenote",
+        "required": true,
+        "trim": true
+      }
+    },
+    {
+      "type": "textfield",
+      "variable": "keyword_outlook",
+      "label": "",
+      "description": "Outlook agenda and mail",
+      "config": {
+        "default": "outlook",
+        "placeholder": "outlook",
+        "required": true,
+        "trim": true
+      }
+    },
+    {
+      "type": "textfield",
+      "variable": "keyword_account",
+      "label": "",
+      "description": "Sign in and out",
+      "config": {
+        "default": "m365",
+        "placeholder": "m365",
+        "required": true,
+        "trim": true
+      }
+    },
+    {
+      "type": "popupbutton",
+      "variable": "teams_open",
+      "label": "Open Teams links in",
+      "description": "",
+      "config": {
+        "default": "app",
+        "pairs": [
+          [
+            "Microsoft Teams app",
+            "app"
+          ],
+          [
+            "Web browser",
+            "web"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "popupbutton",
+      "variable": "onenote_open",
+      "label": "Open OneNote pages in",
+      "description": "",
+      "config": {
+        "default": "app",
+        "pairs": [
+          [
+            "OneNote app",
+            "app"
+          ],
+          [
+            "OneNote on the web",
+            "web"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "textfield",
+      "variable": "onenote_section",
+      "label": "New pages go to",
+      "description": "A section name or Notebook/Section. Leave empty for your default section.",
+      "config": {
+        "default": "",
+        "placeholder": "Quick Notes",
+        "required": false,
+        "trim": true
+      }
+    }
+  ],
+  "objects": [
+    {
+      "id": "sf_teams",
+      "type": "scriptfilter",
+      "keyword": "{var:keyword_teams}",
+      "title": "Microsoft Teams",
+      "subtext": "Join today's meetings, set your status or chat with someone",
+      "script": "osascript -l JavaScript ./m365.js teams \"$1\"",
+      "queuedelaymode": 1,
+      "running": "Asking Microsoft 365…"
+    },
+    {
+      "id": "sf_onenote",
+      "type": "scriptfilter",
+      "keyword": "{var:keyword_onenote}",
+      "title": "OneNote",
+      "subtext": "Search page titles or create a page",
+      "script": "osascript -l JavaScript ./m365.js onenote \"$1\"",
+      "queuedelaymode": 0,
+      "running": "Asking Microsoft 365…"
+    },
+    {
+      "id": "sf_outlook",
+      "type": "scriptfilter",
+      "keyword": "{var:keyword_outlook}",
+      "title": "Outlook",
+      "subtext": "Today's agenda, or type to search mail",
+      "script": "osascript -l JavaScript ./m365.js outlook \"$1\"",
+      "queuedelaymode": 1,
+      "running": "Asking Microsoft 365…"
+    },
+    {
+      "id": "sf_account",
+      "type": "scriptfilter",
+      "keyword": "{var:keyword_account}",
+      "title": "Microsoft 365 Account",
+      "subtext": "Sign in or out",
+      "script": "osascript -l JavaScript ./m365.js account \"$1\"",
+      "queuedelaymode": 0,
+      "running": "Asking Microsoft 365…"
+    },
+    {
+      "id": "act",
+      "type": "script",
+      "script": "osascript -l JavaScript ./m365.js act \"$1\"",
+      "note": "Runs the action named by $m365_action"
+    },
+    {
+      "id": "notify",
+      "type": "notification"
+    },
+    {
+      "id": "ext_notify",
+      "type": "external",
+      "trigger": "notify",
+      "note": "Used by background jobs (sign-in poller)"
+    }
+  ],
+  "connections": [
+    {
+      "from": "sf_teams",
+      "to": "act"
+    },
+    {
+      "from": "sf_teams",
+      "to": "act",
+      "mod": "cmd"
+    },
+    {
+      "from": "sf_teams",
+      "to": "act",
+      "mod": "alt"
+    },
+    {
+      "from": "sf_onenote",
+      "to": "act"
+    },
+    {
+      "from": "sf_onenote",
+      "to": "act",
+      "mod": "cmd"
+    },
+    {
+      "from": "sf_onenote",
+      "to": "act",
+      "mod": "alt"
+    },
+    {
+      "from": "sf_outlook",
+      "to": "act"
+    },
+    {
+      "from": "sf_outlook",
+      "to": "act",
+      "mod": "cmd"
+    },
+    {
+      "from": "sf_outlook",
+      "to": "act",
+      "mod": "alt"
+    },
+    {
+      "from": "sf_account",
+      "to": "act"
+    },
+    {
+      "from": "sf_account",
+      "to": "act",
+      "mod": "cmd"
+    },
+    {
+      "from": "sf_account",
+      "to": "act",
+      "mod": "alt"
+    },
+    {
+      "from": "act",
+      "to": "notify"
+    },
+    {
+      "from": "ext_notify",
+      "to": "notify"
+    }
+  ]
+}
