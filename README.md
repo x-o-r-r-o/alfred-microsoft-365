@@ -69,6 +69,8 @@ See today’s agenda via the `outlook` keyword, or type to search your mail. Sea
 
 Sign in, sign out, or refresh cached data via the `m365` keyword.
 
+![Signing in to Microsoft 365](images/account.png)
+
 Every keyword can be changed in the Workflow’s Configuration.
 
 ## Development

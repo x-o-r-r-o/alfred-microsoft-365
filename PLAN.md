@@ -23,6 +23,24 @@ Implemented and tested against a local mock of the Microsoft identity platform a
 (`python3 tests/test_m365.py`). Not yet verified against a live tenant; needs the user's own
 Entra ID app registration (README ## Setup). Keyword for sign-in is `m365` (the Gallery requires ≥ 3 characters).
 
+## Known limitations
+- Tested only against a local mock of the Microsoft identity platform and Graph; no live tenant yet.
+- OneNote search matches page titles only (Graph has no full-text page search); the index holds the 5,000 most recently edited pages and refreshes every 30 minutes.
+- Teams status needs a work or school account, and only shows while the user is signed in to a Teams app.
+- Chat and call links use teams.microsoft.com; personal (teams.live.com) accounts may not open them.
+- Rate limiting: Alfred's automatic queue delay plus "terminate previous script", a per-query cache and a shared back-off after 429 keep requests low; there is no request budget beyond that (Graph's per-app limits are far above keystroke rates).
+- The device code poller receives the device code in its environment (visible to the same user's `ps -E` for up to 15 minutes); tokens themselves never leave the Keychain except on curl's stdin.
+
+## Verify in real Alfred
+- [ ] Device code sign-in with a work account and with a personal account (tenant `consumers`), including the notification from the background poller (External Trigger `notify`).
+- [ ] Joining a meeting opens the Teams app; with “Web browser” selected it opens the browser.
+- [ ] Setting and resetting the status shows in Teams; the 7-day cap is accepted by Graph.
+- [ ] People search, chat and video-call links open the right chat.
+- [ ] OneNote index on a large account (section-by-section fallback), `onenote:` links open the app, new pages land in the configured section.
+- [ ] Mail search with `from:` / `subject:` syntax; the webLink opens the message.
+- [ ] Holding ⌘/⌥ on rows without that modifier behaves sensibly (Outlook mail has no ⌥ action).
+- [ ] Screenshots for every README paragraph.
+
 ## Tech
 - **Stack:** zsh + JXA; Microsoft Graph with device-code OAuth.
 - **Dependencies:** Work/school tenants may need admin consent.
@@ -31,10 +49,10 @@ Entra ID app registration (README ## Setup). Keyword for sign-in is `m365` (the 
 - Target: macOS 13+ on Apple Silicon and Intel.
 
 ## Milestones
-1. Script filter prototype for the main keyword
-2. Actions + modifiers, Universal Actions / File Actions where relevant
-3. Workflow Configuration, icons, error states (no network / missing dependency)
-4. README with screenshots, `tools/build.py --package` release, forum post, then Gallery submission when invited
+1. [x] Script filter prototype for the main keyword
+2. [x] Actions + modifiers, Universal Actions / File Actions where relevant
+3. [x] Workflow Configuration, icons, error states (no network / missing dependency)
+4. [ ] README with screenshots, `tools/build.py --package` release, forum post, then Gallery submission when invited
 
 ## Release checklist (Alfred forum + Gallery)
 Sources: alfred.app/submit, alfred.app/submit/styleguide, alfred.app/submit/screenshots, alfredforum.com topics 23976 and 23388.

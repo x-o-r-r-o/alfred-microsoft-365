@@ -1175,6 +1175,76 @@ class AuditFourTests(Base):
         self.assertEqual(MOCK.created, [])
 
 
+class FinalReviewTests(Base):
+    def test_bidi_control_and_lone_surrogates_are_cleaned(self):
+        self.sign_in()
+        MOCK.mails = [{"subject": "Pay‮FDP.exe\u0007 \ud83d", "isRead": True,
+                       "from": {"emailAddress": {"name": "E⁦vil", "address": "x‮@y.com"}},
+                       "receivedDateTime": "2026-09-26T08:15:00Z", "webLink": "https://outlook.office365.com/owa/?1"}]
+        out = self.run_js("outlook", "pay")
+        self.assertNotIn("\\ud83d", out.lower())
+        it = json.loads(out)["items"][0]
+        self.assertEqual(it["title"], "PayFDP.exe �")
+        self.assertTrue(it["subtitle"].startswith("Evil · "))
+        self.assertEqual(it["mods"]["cmd"]["subtitle"], "Copy x@y.com")
+        self.assertEqual(it["text"]["largetype"], "PayFDP.exe �")
+
+    def test_corrupt_cache_shapes_are_refetched(self):
+        self.sign_in()
+        MOCK.events = [ev("Standup", "2026-09-26T11:00:00", "2026-09-26T11:15:00")]
+        MOCK.pages = [page("Plan")]
+        d = os.path.join(self.dir, "cache", "user-1")
+        os.makedirs(d, exist_ok=True)
+        for body in ("[]", "null", "5", '{"fetched_at": "x", "data": []}', '{"fetched_at": 1, "data": "str"}',
+                     '{"fetched_at": 99999999999999, "data": []}'):
+            for n in ("events-2026-09-26", "onenote-index", "presence"):
+                with open(os.path.join(d, n + ".json"), "w") as f:
+                    f.write(body)
+            with open(os.path.join(d, "onenote-index.error.json"), "w") as f:
+                f.write("[1]")
+            self.assertEqual(self.sf("teams")[0]["title"], "Standup", body)
+            self.assertEqual(self.sf("onenote")[0]["title"], "Plan", body)
+            self.assertIn("Current status", self.sf("teams", "status")[0]["title"], body)
+
+    def test_query_cache_is_capped(self):
+        self.sign_in()
+        for q in ("alpha", "bravo", "charlie", "delta"):
+            self.sf("outlook", q, M365_TEST_QUERY_CACHE_MAX="2")
+            time.sleep(0.02)
+        files = [n for n in os.listdir(os.path.join(self.dir, "cache", "user-1")) if n.startswith("mail-")]
+        self.assertEqual(len(files), 2)
+
+    def test_people_named_like_object_properties(self):
+        self.sign_in()
+        MOCK.people = [{"displayName": "C", "scoredEmailAddresses": [{"address": "constructor"}]},
+                       {"displayName": "P", "scoredEmailAddresses": [{"address": "__proto__"}]}]
+        self.assertEqual(self.titles(self.sf("teams", "co"))[-2:], ["C", "P"])
+
+    def test_missing_test_override_never_reaches_real_services(self):
+        self.sign_in()
+        for var in ("M365_TEST_KEYCHAIN_DIR", "M365_LOGIN_BASE", "M365_GRAPH_BASE", "M365_TEST_OPEN_FILE",
+                    "M365_TEST_CLIPBOARD_OUT"):
+            e = dict(self.env)
+            del e[var]
+            out = subprocess.run(["osascript", "-l", "JavaScript", "./m365.js", "act", "https://example.com/x"],
+                                 cwd=SRC, env=dict(e, m365_action="copy" if "CLIPBOARD" in var else
+                                                   "open" if "OPEN" in var else "logout" if "KEYCHAIN" in var else "login"),
+                                 capture_output=True, text=True, timeout=60).stdout
+            self.assertIn(f"Test mode: {var} is not set", out, var)
+        # Test mode only ever talks to the local mock, even when an override names a real host.
+        # (The mock never sees the request; an http:// URL on a closed port proves nothing left.)
+        it = self.sf("teams", M365_GRAPH_BASE="http://graph.invalid/v1.0")
+        self.assertIn("refusing", it[0]["title"])
+
+    def test_refresh_job_stops_at_its_deadline(self):
+        self.sign_in()
+        MOCK.pages = [page("Plan")]
+        self.run_js("refresh", "onenote-index", M365_TEST_JOB_DEADLINE="-1")
+        with open(os.path.join(self.dir, "cache", "user-1", "onenote-index.error.json")) as f:
+            self.assertEqual(json.load(f)["kind"], "timeout")
+        self.assertEqual(MOCK.graph_requests("/v1.0/me/onenote/pages"), [])
+
+
 class PlistTests(unittest.TestCase):
     def test_build_and_plist(self):
         subprocess.run([sys.executable, "tools/build.py"], cwd=ROOT, check=True, capture_output=True)

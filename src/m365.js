@@ -25,6 +25,15 @@ const trimSlash = (s) => String(s).replace(/\/+$/, "");
 const LOGIN_BASE = trimSlash(env("M365_LOGIN_BASE", "https://login.microsoftonline.com"));
 const GRAPH_BASE = trimSlash(env("M365_GRAPH_BASE", "https://graph.microsoft.com/v1.0"));
 const CURL = env("M365_TEST_CURL", "/usr/bin/curl");
+// Test mode: as soon as any test override is set, every side effect must be overridden too.
+// A forgotten override then fails loudly instead of reaching Microsoft, the Keychain, the
+// clipboard, the browser or Notification Center.
+const TEST_MODE = (ObjC.deepUnwrap(ENV.allKeys) || []).some((k) => /^M365_(TEST_|LOGIN_BASE$|GRAPH_BASE$)/.test(k));
+function testOnly(name, allowEmpty = false) {
+  const v = env(name, null);
+  if (TEST_MODE && (v === null || (v === "" && !allowEmpty))) throw new M365Error("graph", `Test mode: ${name} is not set`);
+  return v;
+}
 // Minimum delegated permissions, one per feature (see README "Setup").
 const CLIENT_ID = env("client_id", "").trim();
 const TENANT = env("tenant", "").trim() || "common";
@@ -43,7 +52,11 @@ const TEAMS_OPEN = env("teams_open", "app");
 const ONENOTE_OPEN = env("onenote_open", "app");
 const ONENOTE_SECTION = env("onenote_section", "").trim();
 const KW_ACCOUNT = env("keyword_account", "m365");
+const KW_ONENOTE = env("keyword_onenote", "onenote");
 let BACKGROUND = false; // true inside background jobs: allows longer Retry-After waits
+// Background refreshes stop starting requests after this, so they always finish well within their
+// lock's 300 s expiry (worst case: one token refresh of 40 s and one request of 20 s after it).
+let DEADLINE = Infinity;
 
 // ---------- small helpers ----------
 
@@ -67,8 +80,18 @@ function clock() {
 function sleep(sec) {
   if (sec > 0) $.NSThread.sleepForTimeInterval(sec);
 }
+// Lone UTF-16 surrogates make Alfred reject the JSON: keep pairs, replace strays.
+function fixSurrogates(s) {
+  return String(s).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, (m) => (m.length === 2 ? m : "�"));
+}
+// Display text: no control characters or bidi overrides (a mail subject can use them to disguise itself).
+function clean(s) {
+  return fixSurrogates(String(s == null ? "" : s))
+    .replace(/[‪-‮⁦-⁩‎‏؜]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "");
+}
 function oneLine(s, max = 120) {
-  const t = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+  const t = clean(s).replace(/\s+/g, " ").trim();
   if (t.length <= max) return t;
   const cps = Array.from(t); // never split an emoji (surrogate pair) in half
   return cps.length > max ? cps.slice(0, max - 1).join("") + "…" : t;
@@ -233,7 +256,7 @@ function keychainError(status) {
   return new M365Error("keychain", `Couldn't read your sign-in from the Keychain (error ${status}). Unlock the login keychain and try again.`, { status });
 }
 function testSecretPath(acct) {
-  const dir = env("M365_TEST_KEYCHAIN_DIR", "");
+  const dir = testOnly("M365_TEST_KEYCHAIN_DIR") || "";
   return dir ? `${dir}/${acct.replace(/[^A-Za-z0-9._-]/g, "_")}.secret` : null;
 }
 function kcGet(acct) {
@@ -323,6 +346,13 @@ function decode(data) {
 // Returns {status, headers, text, json} or {net: curlExitCode}.
 function http(method, url, { headers = {}, body = null, timeout = 20 } = {}) {
   if (!/^https?:\/\//i.test(url)) throw new M365Error("graph", `Refusing to request ${url}`);
+  if (TEST_MODE) {
+    testOnly("M365_LOGIN_BASE");
+    testOnly("M365_GRAPH_BASE");
+    // Only the local mock: never Microsoft, whatever the overrides say.
+    const local = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//i.test(url);
+    if (!local || (!sameOrigin(url, LOGIN_BASE) && !sameOrigin(url, GRAPH_BASE))) throw new M365Error("graph", `Test mode: refusing to request ${url}`);
+  }
   const lines = ["silent", "include", "globoff", `url = ${cfgQuote(url)}`, `request = ${cfgQuote(method)}`,
     `max-time = ${timeout}`, "connect-timeout = 8", 'header = "Expect:"'];
   for (const [k, v] of Object.entries(headers)) lines.push(`header = ${cfgQuote(`${k}: ${String(v).replace(/[\r\n]+/g, " ")}`)}`);
@@ -347,7 +377,7 @@ function http(method, url, { headers = {}, body = null, timeout = 20 } = {}) {
     status = parseInt(head.match(/^HTTP\/[\d.]+ (\d{3})/)[1], 10);
     // More header blocks follow after 1xx responses and a proxy's "200 Connection established".
   }
-  const hdrs = {};
+  const hdrs = Object.create(null);
   for (const line of head.split(/\r?\n/).slice(1)) {
     const m = line.match(/^([^:]+):\s*(.*)$/);
     if (m) hdrs[m[1].toLowerCase()] = m[2].trim();
@@ -505,6 +535,7 @@ function graph(method, path, opts = {}) {
   let token = accessToken();
   let refreshed = false, retries = 0;
   for (;;) {
+    if (nowMs() > DEADLINE) throw new M365Error("timeout", "Microsoft 365 took too long to answer. Try again later.");
     const headers = Object.assign({ Authorization: `Bearer ${token}`, Accept: "application/json" }, opts.headers || {});
     let body = null;
     if (opts.json !== undefined) {
@@ -526,7 +557,7 @@ function graph(method, path, opts = {}) {
     }
     if (r.status === 429 || r.status === 503 || r.status === 504) {
       const wait = retryAfterSec(r);
-      if (retries < 2 && wait <= (BACKGROUND ? 30 : 2)) {
+      if (retries < 2 && wait <= (BACKGROUND ? 30 : 2) && nowMs() + wait * 1000 < DEADLINE) {
         retries++;
         sleep(wait);
         continue;
@@ -569,7 +600,7 @@ function graphAll(path, { maxPages = 20, headers } = {}) {
 
 const CLIPBOARD_MAX = Number(env("M365_TEST_CLIPBOARD_MAX", "")) || 1000000;
 function clipboardText() {
-  let t = env("M365_TEST_CLIPBOARD", null);
+  let t = testOnly("M365_TEST_CLIPBOARD", true);
   if (t === null) {
     const str = $.NSPasteboard.generalPasteboard.stringForType($.NSPasteboardTypeString);
     t = str.isNil() ? "" : str.js;
@@ -578,7 +609,7 @@ function clipboardText() {
   return t;
 }
 function copyText(text, transient = false) {
-  const f = env("M365_TEST_CLIPBOARD_OUT", "");
+  const f = testOnly("M365_TEST_CLIPBOARD_OUT");
   if (f) return writeText(f, text);
   const pb = $.NSPasteboard.generalPasteboard;
   pb.clearContents;
@@ -594,7 +625,7 @@ function testRecord(varName, line) {
   return true;
 }
 function appCanOpen(url) {
-  const fake = env("M365_TEST_APPS", null);
+  const fake = TEST_MODE ? env("M365_TEST_APPS", "") : null;
   if (fake !== null) return fake.split(",").includes(url.split(":")[0]);
   const u = $.NSURL.URLWithString(url);
   return !u.isNil() && !$.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL(u).isNil();
@@ -603,6 +634,7 @@ function openURL(url) {
   if (!/^(https:|msteams:|onenote:)/i.test(url) && !(env("M365_TEST_OPEN_FILE", "") && /^http:/.test(url))) {
     throw new M365Error("graph", "Refusing to open a link that isn't https");
   }
+  testOnly("M365_TEST_OPEN_FILE");
   if (testRecord("M365_TEST_OPEN_FILE", url)) return;
   const u = $.NSURL.URLWithString(url);
   if (u.isNil() || !$.NSWorkspace.sharedWorkspace.openURL(u)) throw new M365Error("graph", "Couldn't open the link");
@@ -616,7 +648,7 @@ function openPreferApp(appUrl, webUrl, preferApp) {
 // Background jobs can't use Alfred's Notification object directly: ask Alfred to run
 // this workflow's "notify" External Trigger, which is connected to it.
 function notify(text) {
-  if (testRecord("M365_TEST_NOTIFY_FILE", text)) return;
+  if (testRecord("M365_TEST_NOTIFY_FILE", text) || TEST_MODE) return;
   try {
     Application("com.runningwithcrayons.Alfred").runTrigger("notify", { inWorkflow: BUNDLE, withArgument: text });
   } catch (e) {
@@ -655,6 +687,19 @@ function cacheFile(name) {
 function errorFile(name) {
   return `${cacheDir()}/${name}.error.json`;
 }
+// Cache files can be corrupt, truncated or from an older version: accept only the shape we write.
+function readCache(name) {
+  const c = readJSON(cacheFile(name));
+  if (!c || typeof c !== "object" || Array.isArray(c)) return null;
+  if (typeof c.fetched_at !== "number" || !isFinite(c.fetched_at) || c.fetched_at > nowMs() + 60000) return null;
+  const d = c.data;
+  const ok = name === "presence" ? d && typeof d === "object" && !Array.isArray(d) : Array.isArray(d);
+  return ok ? c : null;
+}
+function readCacheError(name) {
+  const e = readJSON(errorFile(name));
+  return e && typeof e === "object" && typeof e.at === "number" && typeof e.message === "string" ? e : null;
+}
 function errorToJSON(e) {
   return { kind: e.kind || "graph", message: e.message, retryAfter: e.retryAfter, status: e.status, at: nowMs() };
 }
@@ -666,18 +711,23 @@ function storeCache(name, data) {
   removePath(errorFile(name));
   if (/^(mail|people)-/.test(name)) pruneQueryCache();
 }
-// Search results are cached per query: drop the ones older than a day.
+// Search results are cached per query (one file per keystroke): drop the ones older than a day
+// and keep at most the newest QUERY_CACHE_MAX.
+const QUERY_CACHE_MAX = Number(env("M365_TEST_QUERY_CACHE_MAX", "")) || 200;
 function pruneQueryCache() {
   const dir = cacheDir();
   const names = ObjC.deepUnwrap(FM.contentsOfDirectoryAtPathError(dir, null)) || [];
-  for (const n of names) {
-    if (/^(mail|people)-[0-9a-f]+\.json$/.test(n) && nowMs() - mtimeMs(`${dir}/${n}`) > 86400000) removePath(`${dir}/${n}`);
-  }
+  const files = names.filter((n) => /^(mail|people)-[0-9a-f]+\.json$/.test(n))
+    .map((n) => ({ p: `${dir}/${n}`, m: mtimeMs(`${dir}/${n}`) })).sort((a, b) => b.m - a.m);
+  files.forEach((f, i) => {
+    if (i >= QUERY_CACHE_MAX || nowMs() - f.m > 86400000) removePath(f.p);
+  });
 }
 
 // Background job: refresh one cache entry, once at a time.
 function refreshJob(name) {
   BACKGROUND = true;
+  DEADLINE = nowMs() + (Number(env("M365_TEST_JOB_DEADLINE", "")) || 200) * 1000;
   const lock = tryLock(`refresh-${name}`, 300);
   if (!lock) return;
   try {
@@ -698,10 +748,10 @@ function startRefresh(name) {
 // returned immediately while a background job refreshes it (Alfred reruns the filter).
 // Without any data: fetch now, or (async) start a job and report loading.
 function swr(name, ttlSec, { async = false } = {}) {
-  const c = readJSON(cacheFile(name));
+  const c = readCache(name);
   const age = c ? (nowMs() - c.fetched_at) / 1000 : Infinity;
   if (c && age < ttlSec && age >= 0) return { data: c.data, age };
-  const err = readJSON(errorFile(name));
+  const err = readCacheError(name);
   const running = lockHeld(`refresh-${name}`, 300);
   const recentErr = err && nowMs() - err.at < 60000 && (!c || err.at > c.fetched_at);
   if (c) {
@@ -709,18 +759,18 @@ function swr(name, ttlSec, { async = false } = {}) {
     if (recentErr) return { data: c.data, age, warning: errorFromJSON(err) };
     startRefresh(name);
     // The test mode refreshes synchronously: pick up its result straight away.
-    const after = readJSON(cacheFile(name));
+    const after = readCache(name);
     if (after && after.fetched_at !== c.fetched_at) return { data: after.data, age: 0 };
-    const e2 = readJSON(errorFile(name));
+    const e2 = readCacheError(name);
     if (e2 && e2.at > c.fetched_at && !lockHeld(`refresh-${name}`, 300)) return { data: c.data, age, warning: errorFromJSON(e2) };
     return { data: c.data, age, rerun: 0.5 };
   }
   if (async) {
     if (recentErr && !running) throw errorFromJSON(err);
     if (!running) startRefresh(name);
-    const after = readJSON(cacheFile(name));
+    const after = readCache(name);
     if (after) return { data: after.data, age: 0 };
-    const e2 = readJSON(errorFile(name));
+    const e2 = readCacheError(name);
     if (e2 && !lockHeld(`refresh-${name}`, 300)) throw errorFromJSON(e2);
     return { data: null, loading: true, rerun: 1 };
   }
@@ -753,12 +803,13 @@ function row(title, subtitle, ic, action, arg, vars = {}, mods = {}, extra = {})
   for (const [k, m] of Object.entries(mods)) {
     it.mods[k] = m.valid === false
       ? { valid: false, arg: "", subtitle: m.subtitle }
-      : { valid: true, arg: m.arg !== undefined ? m.arg : arg, subtitle: m.subtitle, variables: Object.assign({ m365_action: m.action }, m.vars || {}) };
+      : { valid: true, arg: m.arg !== undefined ? m.arg : arg, subtitle: oneLine(m.subtitle, 200), variables: Object.assign({ m365_action: m.action }, m.vars || {}) };
   }
+  if (extra.text && extra.text.largetype !== undefined) extra.text.largetype = clean(extra.text.largetype);
   return Object.assign(it, extra);
 }
 function output(items, extra = {}) {
-  return JSON.stringify(Object.assign({ skipknowledge: true, items }, extra));
+  return JSON.stringify(Object.assign({ skipknowledge: true, items }, extra), (k, v) => (typeof v === "string" ? fixSurrogates(v) : v));
 }
 function ago(ms) {
   const m = Math.round(ms / 60000);
@@ -789,12 +840,13 @@ function errorItems(e) {
     case "throttle":
       return [info("Microsoft 365 is busy", `Too many requests. Try again in ${plural(e.retryAfter || 10, "second")}.`, "error")];
     default:
-      return [info(e.message, "", "error")];
+      return [info(e.message, `Try again in a moment, or check your sign-in and permissions via the ${KW_ACCOUNT} keyword`, "error")];
   }
 }
 function warningRow(w, age) {
+  if (w.kind === "auth") return signInRow(`${oneLine(w.message, 80)} (showing results from ${ago(age * 1000)})`);
   const base = w.kind === "network" ? "Offline" : w.kind === "throttle" ? "Microsoft 365 is busy" : oneLine(w.message, 80);
-  return info(`${base}: showing results from ${ago(age * 1000)}`, w.kind === "auth" ? "Sign in again via the account keyword" : "", w.kind === "network" ? "offline" : "error");
+  return info(`${base}: showing results from ${ago(age * 1000)}`, "", w.kind === "network" ? "offline" : "error");
 }
 
 // ---------- sign-in (device code flow) ----------
@@ -804,7 +856,7 @@ function pendingFile() {
 }
 function pendingLogin() {
   const p = readJSON(pendingFile());
-  return p && p.client_id === CLIENT_ID && p.expires_at > nowMs() ? p : null;
+  return p && p.client_id === CLIENT_ID && p.expires_at > nowMs() && typeof p.user_code === "string" && typeof p.verification_uri === "string" ? p : null;
 }
 function pendingRows() {
   const p = pendingLogin();
@@ -1208,16 +1260,16 @@ function searchParam(q) {
 
 function peopleSearch(q) {
   const name = `people-${hash(norm(q))}`;
-  const c = readJSON(cacheFile(name));
+  const c = readCache(name);
   if (c && nowMs() - c.fetched_at < 600000) return c.data;
   const res = graph("GET", `/me/people?$search=${searchParam(q)}&$top=15&$select=id,displayName,scoredEmailAddresses,jobTitle,department,userPrincipalName,personType`);
   const people = [];
-  const seen = {};
+  const seen = new Set();
   for (const p of res.value || []) {
     if (p.personType && p.personType.class && p.personType.class !== "Person") continue;
     const email = ((p.scoredEmailAddresses || [])[0] || {}).address || p.userPrincipalName || "";
-    if (!email || seen[email.toLowerCase()]) continue;
-    seen[email.toLowerCase()] = true;
+    if (!email || seen.has(email.toLowerCase())) continue;
+    seen.add(email.toLowerCase());
     people.push({ name: p.displayName || email, email, job: p.jobTitle || "", dept: p.department || "" });
   }
   storeCache(name, people);
@@ -1295,7 +1347,7 @@ function mailDate(ms, now) {
 
 function mailSearch(q) {
   const name = `mail-${hash(q)}`;
-  const c = readJSON(cacheFile(name));
+  const c = readCache(name);
   if (c && nowMs() - c.fetched_at < 120000) return c.data;
   const res = graph("GET", `/me/messages?$search=${searchParam(q)}&$top=25&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments`);
   const mails = (res.value || []).map((m) => ({
@@ -1478,7 +1530,7 @@ function onenoteItems(query) {
   const now = clock();
   if (nm) {
     // Also offer pages whose title matches, e.g. a page called "New ideas" (cached index only).
-    const idx = readJSON(cacheFile("onenote-index"));
+    const idx = readCache("onenote-index");
     const words = norm(q).split(/\s+/).filter(Boolean);
     const hits = idx && Array.isArray(idx.data)
       ? idx.data.map((p) => ({ p, s: scorePage(p, words) })).filter((x) => x.s >= 0).sort((a, b) => b.s - a.s || b.p.m - a.p.m).slice(0, 10).map((x) => pageRow(x.p, now))
@@ -1505,7 +1557,7 @@ function onenoteItems(query) {
   }
   for (const p of hits) rows.push(pageRow(p, now));
   if (!hits.length) rows.push(info(pages.length ? `No page titles match “${oneLine(q, 60)}”` : "No OneNote pages found", `Searched ${plural(pages.length, "page title")}`, "page"));
-  rows.push(Object.assign(info("Create a new page…", `onenote new <title> · clipboard becomes the page text`, "new-page"), { autocomplete: "new ", valid: false }));
+  rows.push(Object.assign(info("Create a new page…", `${KW_ONENOTE} new <title> · the clipboard becomes the page text`, "new-page"), { autocomplete: "new ", valid: false }));
   if (!q) rows.push(row("Rebuild the page index", `${plural(pages.length, "page")}, updated ${ago(res.age * 1000)}`, "refresh", "reindex", "reindex"));
   return { items: rows, extra };
 }
@@ -1566,7 +1618,7 @@ function createPage() {
   const entry = pageEntry(page, page.parentSection && page.parentSection.displayName, "");
   entry.m = nowMs();
   // Make the new page searchable right away.
-  const idx = readJSON(cacheFile("onenote-index"));
+  const idx = readCache("onenote-index");
   if (idx && Array.isArray(idx.data)) {
     idx.data.unshift(entry);
     writeJSON(cacheFile("onenote-index"), idx);
@@ -1647,7 +1699,7 @@ function run(argv) {
   if (cmd === "poll") return poll(), "";
   if (cmd === "refresh") return refreshJob(query), "";
   const filters = { teams: teamsItems, outlook: outlookItems, onenote: onenoteItems, account: accountItems };
-  const fn = filters[cmd];
+  const fn = Object.prototype.hasOwnProperty.call(filters, cmd) ? filters[cmd] : null;
   if (!fn) return output([info(`Unknown command ${cmd}`, "", "error")]);
   try {
     const r = fn(query);
