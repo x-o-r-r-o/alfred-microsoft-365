@@ -6,7 +6,7 @@ Join Teams meetings, set your Teams status, chat with people, search OneNote pag
 
 The workflow signs in with your own app registration, so no third party ever sees your data. Register it once (it takes about five minutes):
 
-1. Open the [Microsoft Entra admin center](https://entra.microsoft.com) and go to **Entra ID** › **App registrations** › **New registration**. With a personal Microsoft account, use [the Azure portal’s App registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) instead.
+1. Open the [Microsoft Entra admin center](https://entra.microsoft.com) and go to **Entra ID** › **App registrations** › **New registration**. Microsoft no longer lets a personal Microsoft account register apps on its own: if you only have a personal account, first create a free Azure account (it comes with a directory), then register the app there. If your organization doesn’t let you register apps, ask an admin to register one for you and give you its client ID.
 2. Name it (for example “Alfred”) and choose the **Supported account types**:
    * **Accounts in any organizational directory and personal Microsoft accounts** to use the tenant `common`.
    * **Accounts in this organizational directory only** to use your work or school tenant (you will need its **Directory (tenant) ID**).
@@ -18,7 +18,9 @@ The workflow signs in with your own app registration, so no third party ever see
 7. Enter the client ID and the tenant (`common` by default) in the Workflow’s Configuration.
 8. Sign in via the `m365` keyword. Alfred copies a code and opens microsoft.com/devicelogin: paste the code, sign in, and accept the permissions. A notification confirms when you’re signed in.
 
-Your sign-in stays in the macOS Keychain and renews itself. Teams status needs a work or school account: with the tenant `consumers` (personal accounts) the workflow doesn’t ask for `Presence.ReadWrite`.
+Your sign-in stays in the macOS Keychain and renews itself. Teams status needs a work or school account: with the tenant `consumers` (personal accounts) the workflow doesn’t ask for `Presence.ReadWrite`. The status you set only shows while you’re signed in to a Teams app.
+
+If sign-in fails with a Conditional Access error, your organization blocks device code sign-in and only an admin can allow it for this app.
 
 ## Usage
 

@@ -163,7 +163,16 @@ function cacheDir() {
 ObjC.bindFunction("kill", ["int", ["int", "int"]]);
 function pidAlive(pid) {
   if (!(pid > 0)) return false;
-  return $.kill(pid, 0) === 0; // lock owners are always this user's own processes
+  if ($.kill(pid, 0) !== 0) return false; // lock owners are always this user's own processes
+  // PIDs are reused: a live PID only counts if it still runs this script.
+  const cmd = processCommand(pid);
+  return cmd === null || /m365\.js/.test(cmd);
+}
+// The command line of a process, "" if it's gone, null if ps couldn't run.
+function processCommand(pid) {
+  const r = runWithStdin("/bin/ps", ["-o", "command=", "-p", String(pid)], "");
+  if (r.code === -1 || !r.data) return null;
+  return decode(r.data).trim();
 }
 function lockDir(name) {
   return `${cacheRoot()}/locks/${name}.lock`;
@@ -218,18 +227,29 @@ function kcQuery(acct) {
   d.setObjectForKey($(acct), $("acct"));
   return d;
 }
+// A locked Keychain (or a cancelled unlock prompt) isn't "signed out": say so instead of
+// offering a sign-in whose tokens couldn't be saved either.
+function keychainError(status) {
+  return new M365Error("keychain", `Couldn't read your sign-in from the Keychain (error ${status}). Unlock the login keychain and try again.`, { status });
+}
 function testSecretPath(acct) {
   const dir = env("M365_TEST_KEYCHAIN_DIR", "");
   return dir ? `${dir}/${acct.replace(/[^A-Za-z0-9._-]/g, "_")}.secret` : null;
 }
 function kcGet(acct) {
   const t = testSecretPath(acct);
-  if (t) return readText(t);
+  if (t) {
+    const locked = Number(env("M365_TEST_KEYCHAIN_STATUS", "0"));
+    if (locked) throw keychainError(locked);
+    return readText(t);
+  }
   const q = kcQuery(acct);
   q.setObjectForKey($.NSNumber.numberWithBool(true), $("r_Data"));
   q.setObjectForKey($("m_LimitOne"), $("m_Limit"));
   const r = Ref();
-  if ($.SecItemCopyMatching(q, r) !== 0) return null;
+  const status = $.SecItemCopyMatching(q, r);
+  if (status === -25300) return null; // errSecItemNotFound
+  if (status !== 0) throw keychainError(status);
   const s = $.NSString.alloc.initWithDataEncoding(ObjC.castRefToObject(r[0]), $.NSUTF8StringEncoding);
   return s.isNil() ? null : s.js;
 }
@@ -381,7 +401,7 @@ const AADSTS = {
   900023: ["config", "The tenant isn't valid. Check the tenant in the Workflow’s Configuration."],
   50020: ["auth", "This account doesn't belong to the app's tenant. Check the tenant or the app's supported account types."],
   50105: ["consent", "Your admin must assign you to this app before you can use it."],
-  53003: ["auth", "Blocked by your organization's Conditional Access policy."],
+  53003: ["auth", "Blocked by your organization's Conditional Access policy (it may block device code sign-in). Ask your IT admin."],
   70011: ["config", "Microsoft rejected the requested permissions. With a personal Microsoft account, set the tenant to “consumers”."],
   700082: ["auth", "Your sign-in expired after a long period of inactivity. Sign in again."],
   70008: ["auth", "Your sign-in expired. Sign in again."],
@@ -402,7 +422,8 @@ function aadCode(j) {
 function aadError(j, status) {
   const code = aadCode(j);
   if (code && AADSTS[code]) return new M365Error(AADSTS[code][0], AADSTS[code][1], { aadsts: code, error: j.error });
-  let desc = String((j && j.error_description) || "").split(/\r?\n/)[0].replace(/^AADSTS\d+:\s*/, "");
+  let desc = String((j && j.error_description) || "").split(/\r?\n/)[0].replace(/^AADSTS\d+:\s*/, "")
+    .replace(/\s*(Trace ID|Correlation ID|Timestamp):[\s\S]*$/, "");
   if (!desc) desc = (j && j.error) || `Sign-in failed (HTTP ${status})`;
   const kind = j && ["invalid_grant", "interaction_required", "login_required", "consent_required"].includes(j.error) ? "auth" : "config";
   return new M365Error(kind, oneLine(desc, 200), { aadsts: code, error: j && j.error });
@@ -546,13 +567,15 @@ function graphAll(path, { maxPages = 20, headers } = {}) {
 
 // ---------- system: clipboard, open, notify, background jobs ----------
 
+const CLIPBOARD_MAX = Number(env("M365_TEST_CLIPBOARD_MAX", "")) || 1000000;
 function clipboardText() {
-  const fake = env("M365_TEST_CLIPBOARD", null);
-  if (fake !== null) return fake;
-  const s = $.NSPasteboard.generalPasteboard.stringForType($.NSPasteboardTypeString);
-  if (s.isNil()) return "";
-  const t = s.js;
-  return t.length > 1000000 ? "" : t;
+  let t = env("M365_TEST_CLIPBOARD", null);
+  if (t === null) {
+    const str = $.NSPasteboard.generalPasteboard.stringForType($.NSPasteboardTypeString);
+    t = str.isNil() ? "" : str.js;
+  }
+  if (t.length > CLIPBOARD_MAX) throw new M365Error("graph", `The clipboard is too large for a OneNote page (over ${plural(CLIPBOARD_MAX, "character")})`);
+  return t;
 }
 function copyText(text, transient = false) {
   const f = env("M365_TEST_CLIPBOARD_OUT", "");
@@ -613,7 +636,8 @@ function scriptPath() {
 function spawnDetached(args, extraEnv = {}) {
   const task = $.NSTask.alloc.init;
   task.executableURL = $.NSURL.fileURLWithPath("/bin/bash");
-  task.arguments = ["-c", 'nohup /usr/bin/osascript -l JavaScript "$0" "$@" </dev/null >/dev/null 2>&1 &', scriptPath()].concat(args);
+  // set -m puts the job in its own process group, so it survives Alfred killing the Script Filter's group.
+  task.arguments = ["-c", 'set -m; nohup /usr/bin/osascript -l JavaScript "$0" "$@" </dev/null >/dev/null 2>&1 &', scriptPath()].concat(args);
   const e = ObjC.deepUnwrap(ENV) || {};
   Object.assign(e, extraEnv);
   task.environment = $(e);
@@ -760,6 +784,8 @@ function errorItems(e) {
         row("Sign in again", "To consent to the workflow’s permissions", "login", "login", "login")];
     case "network":
       return [info("You're offline", e.message, "offline")];
+    case "keychain":
+      return [info("Your Keychain is locked", e.message, "error")];
     case "throttle":
       return [info("Microsoft 365 is busy", `Too many requests. Try again in ${plural(e.retryAfter || 10, "second")}.`, "error")];
     default:
@@ -893,6 +919,15 @@ function poll() {
   }
 }
 
+// Delegated permissions the last token response didn't grant (an admin can consent to fewer).
+function missingScopes(granted) {
+  if (!granted) return [];
+  const have = String(granted).toLowerCase().split(/\s+/).map((s) => s.replace(/^https:\/\/graph\.microsoft\.com\//, ""));
+  // X.ReadWrite and X.Read.All grant X.Read too.
+  const covers = (h, s) => h === s || h.startsWith(`${s}.`) || h.startsWith(s.replace(/\.read$/, ".readwrite"));
+  return SCOPES.split(" ").filter((s) => s !== "offline_access" && !have.some((h) => covers(h, s.toLowerCase())));
+}
+
 function logout() {
   kcDel(kcAccount());
   removePath(cacheDir());
@@ -912,6 +947,11 @@ function accountItems(query) {
   if (t) {
     const who = a && (a.name || a.email) ? `${a.name}${a.email ? ` (${a.email})` : ""}` : "your account";
     rows.push(info(`Signed in as ${who}`, `Tenant: ${TENANT}`, "account"));
+    const missing = missingScopes(t.scope);
+    if (missing.length) {
+      rows.push(info(`Missing permission${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+        "Add them to your app registration (or ask for admin consent), then sign in again", "error"));
+    }
     rows.push(row("Sign in again", "To switch accounts or consent to new permissions", "login", "login", "login"));
     rows.push(row("Refresh cached data", "Meetings, presence and the OneNote page index", "refresh", "clear-cache", "clear-cache"));
     rows.push(row("Sign out", "Removes the sign-in from the Keychain and clears the cache", "logout", "logout", "logout"));
@@ -961,7 +1001,7 @@ function fetchEvents(day) {
       subject: e.subject || "",
       allDay: !!e.isAllDay,
       join: isHttpUrl(join) ? join : "",
-      teams: e.onlineMeetingProvider === "teamsForBusiness" || /^https:\/\/teams\.(microsoft|live)\.com\//i.test(join),
+      teams: e.onlineMeetingProvider === "teamsForBusiness" || /^https:\/\/teams\.(microsoft\.com|live\.com|cloud\.microsoft)\//i.test(join),
       web: isHttpUrl(e.webLink) ? e.webLink : "",
       location: (e.location && e.location.displayName) || "",
       organizer: (e.organizer && e.organizer.emailAddress && e.organizer.emailAddress.name) || "",
@@ -1032,7 +1072,8 @@ function eventWhen(ev, now) {
 const STATE_ORDER = { now: 0, soon: 1, allday: 2, ended: 3 };
 
 function teamsLinks(httpsUrl) {
-  const m = /^https:\/\/teams\.microsoft\.com(\/l\/[^\s]*)$/i.exec(httpsUrl || "");
+  // Work and school links (teams.microsoft.com, or teams.cloud.microsoft since 2024) open in the app.
+  const m = /^https:\/\/teams\.(?:microsoft\.com|cloud\.microsoft)(\/l\/[^\s]*)$/i.exec(httpsUrl || "");
   return { app: m ? `msteams:${m[1]}` : "", web: httpsUrl || "" };
 }
 
@@ -1104,11 +1145,15 @@ function statusItems(rest) {
   try {
     const cur = swr("presence", 60);
     if (cur.data && cur.data.availability) {
-      rows.push(info(`Current status: ${readable(cur.data.availability)}`, cur.data.activity && cur.data.activity !== cur.data.availability ? readable(cur.data.activity) : "", "presence-" + presenceIcon(cur.data.availability)));
+      const a = cur.data.availability;
+      // Teams only shows a status you set while you're signed in to a Teams app somewhere.
+      const sub = a === "Offline" || a === "PresenceUnknown"
+        ? "A status you set shows only while you’re signed in to Teams"
+        : cur.data.activity && cur.data.activity !== a ? readable(cur.data.activity) : "";
+      rows.push(info(`Current status: ${readable(a)}`, sub, "presence-" + presenceIcon(a)));
     }
   } catch (e) {
-    if (e.kind === "auth") return errorItems(e);
-    if (e.kind === "network") return errorItems(e);
+    if (["auth", "network", "keychain"].includes(e.kind)) return errorItems(e);
     rows.push(info("Couldn't read your status", presenceHint(e), "error"));
   }
   if (!matches.length) {
@@ -1211,7 +1256,7 @@ function teamsItems(query) {
     if (ev.warning) rows.push(warningRow(ev.warning, ev.age));
     meetings = (ev.data || []).filter((e) => e.join && e.teams && e.response !== "declined");
   } catch (e) {
-    if (e.kind === "auth" || e.kind === "config") return { items: errorItems(e) };
+    if (["auth", "config", "keychain"].includes(e.kind)) return { items: errorItems(e) };
     rows.push(...errorItems(e));
   }
   const words = norm(q).split(/\s+/).filter(Boolean);
@@ -1232,7 +1277,7 @@ function teamsItems(query) {
       for (const p of people) rows.push(personRow(p));
       if (!people.length && !list.length) rows.push(info(`No meetings or people match “${oneLine(q, 60)}”`, "", "person"));
     } catch (e) {
-      if (e.kind === "auth") return { items: errorItems(e) };
+      if (e.kind === "auth" || e.kind === "keychain") return { items: errorItems(e) };
       rows.push(...errorItems(e).map((r) => Object.assign(r, { subtitle: r.subtitle || "People search" })));
     }
   }
@@ -1411,7 +1456,11 @@ function newPageItems(rest) {
     body = inline;
     src = inline.trim() ? `with “${oneLine(inline, 40)}”` : "empty";
   } else {
-    body = clipboardText();
+    try {
+      body = clipboardText();
+    } catch (e) {
+      return [info(e.message, "Type the text after “::” instead", "error")];
+    }
     src = body.trim() ? `with the clipboard (${plural([...body].length, "character")})` : "empty (the clipboard is empty)";
   }
   const vars = { m365_title: title, m365_body_source: inline !== null ? "inline" : "clipboard", m365_body: inline !== null ? inline : "" };
@@ -1488,7 +1537,9 @@ function resolveSectionPath() {
   if (s) return `/me/onenote/sections/${encodeURIComponent(s.id)}/pages`;
   if (byName.length > 1) throw new M365Error("graph", `Several sections are named “${ONENOTE_SECTION}”: use Notebook/Section in the Workflow’s Configuration`);
   if (ONENOTE_SECTION.includes("/")) throw new M365Error("graph", `Section “${ONENOTE_SECTION}” not found`);
-  // A plain name: OneNote finds it in the default notebook (or creates it).
+  // A plain name: OneNote finds it in the default notebook (or creates it), but can't create
+  // a section whose name has any of these characters.
+  if (/[?*\\/:<>|&#"%~]/.test(ONENOTE_SECTION)) throw new M365Error("graph", `Section “${ONENOTE_SECTION}” not found (and OneNote can't create a section with that name)`);
   return `/me/onenote/pages?sectionName=${encodeURIComponent(ONENOTE_SECTION)}`;
 }
 

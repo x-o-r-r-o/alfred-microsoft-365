@@ -1055,6 +1055,106 @@ class AuditThreeTests(Base):
         self.assertEqual(MOCK.created[-1][0], "/me/onenote/sections/moved/pages")
 
 
+# ---------------------------------------------------------------- regression tests (audit pass 4)
+
+class AuditFourTests(Base):
+    def test_locked_keychain_is_not_signed_out(self):
+        self.sign_in()
+        for cmd in ("teams", "outlook", "onenote", "account"):
+            it = self.sf(cmd, M365_TEST_KEYCHAIN_STATUS="-25308")
+            self.assertEqual(it[0]["title"], "Your Keychain is locked", cmd)
+            self.assertIn("-25308", it[0]["subtitle"])
+        self.assertIn("Keychain", self.act("presence", "busy", m365_presence="busy", M365_TEST_KEYCHAIN_STATUS="-25308"))
+        self.assertIsNotNone(self.tokens())
+
+    def test_lock_held_by_a_reused_pid_is_ignored(self):
+        # A live process that isn't this script (here: the test runner) owns the lock's PID.
+        self.sign_in()
+        MOCK.pages = [page("Old")]
+        self.sf("onenote")
+        age(os.path.join(self.dir, "cache", "user-1", "onenote-index.json"), 7200)
+        MOCK.pages = [page("Fresh")]
+        d = os.path.join(self.dir, "cache", "locks", "refresh-onenote-index.lock")
+        os.makedirs(d)
+        with open(os.path.join(d, "pid"), "w") as f:
+            f.write(str(os.getpid()))
+        it = self.sf("onenote")
+        self.assertEqual(it[0]["title"], "Fresh")
+        self.assertNotIn("rerun", self.last)
+
+    def test_background_job_has_its_own_process_group(self):
+        import socket
+        black_hole = socket.socket()
+        black_hole.bind(("127.0.0.1", 0))
+        black_hole.listen(8)  # accepts connections, never answers
+        port = black_hole.getsockname()[1]
+        self.sign_in()
+        try:
+            it = self.sf("onenote", M365_TEST_BG_SYNC="", M365_GRAPH_BASE=f"http://127.0.0.1:{port}/v1.0")
+            self.assertEqual(it[0]["title"], "Indexing your OneNote pages…")
+            def job():
+                out = subprocess.run(["ps", "-axo", "pid=,pgid=,command="], capture_output=True, text=True).stdout
+                for line in out.splitlines():
+                    if "m365.js refresh onenote-index" in line:
+                        pid, pgid = line.split()[:2]
+                        return pid, pgid
+            pid, pgid = self.wait_for(job, timeout=10)
+            self.assertEqual(pid, pgid)
+            os.kill(int(pid), 15)
+        finally:
+            black_hole.close()
+
+    def test_trace_ids_are_dropped_from_sign_in_errors(self):
+        MOCK.devicecode_error = {"error": "invalid_request", "error_description":
+                                 "AADSTS9002313: Invalid request. Request is malformed or invalid. Trace ID: 1 Correlation ID: 2 Timestamp: 3"}
+        self.assertEqual(self.act("login"), "Invalid request. Request is malformed or invalid.")
+
+    def test_teams_cloud_microsoft_links_open_in_the_app(self):
+        self.sign_in()
+        MOCK.events = [ev("New host", "2026-09-26T11:00:00", "2026-09-26T11:15:00", provider="unknown",
+                          join="https://teams.cloud.microsoft/l/meetup-join/19%3ameeting_y%40thread.v2/0")]
+        item = self.sf("teams")[0]
+        self.assertEqual(item["title"], "New host")
+        self.item_act(item, M365_TEST_APPS="msteams")
+        self.assertEqual(self.read("opened").strip(), "msteams:/l/meetup-join/19%3ameeting_y%40thread.v2/0")
+
+    def test_missing_permissions_are_shown(self):
+        self.sign_in()
+        p = os.path.join(self.dir, "kc", KC_FILE)
+        with open(p) as f:
+            t = json.load(f)
+        t["scope"] = "User.Read Calendars.Read Mail.ReadWrite Notes.ReadWrite.All People.Read profile openid"
+        with open(p, "w") as f:
+            json.dump(t, f)
+        it = self.sf("account")
+        self.assertEqual(it[1]["title"], "Missing permission: Presence.ReadWrite")
+        t["scope"] += " https://graph.microsoft.com/Presence.ReadWrite"
+        with open(p, "w") as f:
+            json.dump(t, f)
+        self.assertNotIn("Missing", " ".join(self.titles(self.sf("account"))))
+
+    def test_offline_presence_explains_teams_session(self):
+        self.sign_in()
+        MOCK.presence = {"availability": "Offline", "activity": "OffWork"}
+        it = self.sf("teams", "status")
+        self.assertEqual(it[0]["title"], "Current status: Offline")
+        self.assertIn("signed in to Teams", it[0]["subtitle"])
+
+    def test_section_name_onenote_cannot_create(self):
+        self.sign_in()
+        it = self.sf("onenote", "new T")
+        self.assertIn("can't create a section", self.item_act(it[0], onenote_section="Q&A"))
+        self.assertEqual(MOCK.created, [])
+
+    def test_huge_clipboard_is_refused(self):
+        self.sign_in()
+        it = self.sf("onenote", "new T", M365_TEST_CLIPBOARD="x" * 50, M365_TEST_CLIPBOARD_MAX="10")
+        self.assertIn("too large", it[0]["title"])
+        it = self.sf("onenote", "new T")
+        self.assertIn("too large", self.item_act(it[0], M365_TEST_CLIPBOARD="x" * 50, M365_TEST_CLIPBOARD_MAX="10"))
+        self.assertEqual(MOCK.created, [])
+
+
 class PlistTests(unittest.TestCase):
     def test_build_and_plist(self):
         subprocess.run([sys.executable, "tools/build.py"], cwd=ROOT, check=True, capture_output=True)
