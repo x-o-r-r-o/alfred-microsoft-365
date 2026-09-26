@@ -1146,6 +1146,26 @@ class AuditFourTests(Base):
         self.assertIn("can't create a section", self.item_act(it[0], onenote_section="Q&A"))
         self.assertEqual(MOCK.created, [])
 
+    def test_curl_config_quoting_round_trips(self):
+        # Tokens and bodies travel in curl's "-K -" config: quotes, backslashes, tabs and a
+        # literal backslash-n must arrive unchanged.
+        self.sign_in(access='AT-"q\\z\\n', refresh='RT-x\\"y')
+        MOCK.events = [ev("Standup", "2026-09-26T11:00:00", "2026-09-26T11:15:00")]
+        self.assertEqual(self.sf("teams")[0]["title"], "Standup")
+        self.assertEqual(self.tokens()["access_token"], 'AT-"q\\z\\n')  # accepted as sent, no refresh
+        text = 'back\\slash "quote" \\n literal\ttab\r\nnext'
+        it = self.sf("onenote", "new T :: " + text)
+        self.assertEqual(self.item_act(it[0]), "Created “T”")
+        self.assertIn('<p>back\\slash &quot;quote&quot; \\n literal\ttab<br/>next</p>', MOCK.created[-1][1])
+
+    def test_hostile_queries(self):
+        self.sign_in()
+        MOCK.pages = [page("Ideas")]
+        for q in ["   ", "-K -", "--help", "\u202eevil", "e\u0301\u0301\u0301", "a" * 5000, "status \u0000", "new ::", "new :: ::", "status 99999d"]:
+            for cmd in ("teams", "onenote", "outlook", "account"):
+                self.sf(cmd, q.replace("\u0000", ""))
+        self.assertEqual(self.sf("teams", "status busy 99999d")[1]["subtitle"], "Set for 7 days")
+
     def test_huge_clipboard_is_refused(self):
         self.sign_in()
         it = self.sf("onenote", "new T", M365_TEST_CLIPBOARD="x" * 50, M365_TEST_CLIPBOARD_MAX="10")
