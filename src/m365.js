@@ -26,17 +26,19 @@ const LOGIN_BASE = trimSlash(env("M365_LOGIN_BASE", "https://login.microsoftonli
 const GRAPH_BASE = trimSlash(env("M365_GRAPH_BASE", "https://graph.microsoft.com/v1.0"));
 const CURL = env("M365_TEST_CURL", "/usr/bin/curl");
 // Minimum delegated permissions, one per feature (see README "Setup").
+const CLIENT_ID = env("client_id", "").trim();
+const TENANT = env("tenant", "").trim() || "common";
+// Personal Microsoft accounts can't use presence, and asking for it can fail their sign-in.
+const PERSONAL_ONLY = TENANT.toLowerCase() === "consumers";
 const SCOPES = [
   "offline_access", // refresh token
   "User.Read", // your name and email
   "Calendars.Read", // Teams meetings and today's agenda
   "Mail.Read", // mail search
   "Notes.ReadWrite", // search OneNote pages and create new ones
-  "Presence.ReadWrite", // read and set your Teams status
+  PERSONAL_ONLY ? null : "Presence.ReadWrite", // read and set your Teams status
   "People.Read", // find people to chat with
-].join(" ");
-const CLIENT_ID = env("client_id", "").trim();
-const TENANT = env("tenant", "").trim() || "common";
+].filter(Boolean).join(" ");
 const TEAMS_OPEN = env("teams_open", "app");
 const ONENOTE_OPEN = env("onenote_open", "app");
 const ONENOTE_SECTION = env("onenote_section", "").trim();
@@ -155,19 +157,41 @@ function cacheDir() {
   return mkdirp(`${cacheRoot()}/${key}`);
 }
 
-// Advisory lock: mkdir is atomic. Stale locks (crashed job) expire.
+// Advisory lock: mkdir is atomic. The owner's PID is stored inside, so a lock left behind by a
+// killed process (Alfred terminates a Script Filter when you keep typing) is ignored at once;
+// staleSec is a backstop.
+ObjC.bindFunction("kill", ["int", ["int", "int"]]);
+function pidAlive(pid) {
+  if (!(pid > 0)) return false;
+  return $.kill(pid, 0) === 0; // lock owners are always this user's own processes
+}
+function lockDir(name) {
+  return `${cacheRoot()}/locks/${name}.lock`;
+}
+function lockStale(dir, staleSec) {
+  if (nowMs() - mtimeMs(dir) > staleSec * 1000) return true;
+  const pid = parseInt(readText(`${dir}/pid`) || "", 10);
+  if (isNaN(pid)) return nowMs() - mtimeMs(dir) > 2000; // just created; the pid is written next
+  return !pidAlive(pid);
+}
 function tryLock(name, staleSec) {
-  const dir = mkdirp(`${cacheRoot()}/locks`) + `/${name}.lock`;
-  if (FM.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(dir, false, $(), null)) return dir;
-  if (nowMs() - mtimeMs(dir) > staleSec * 1000) {
+  mkdirp(`${cacheRoot()}/locks`);
+  const dir = lockDir(name);
+  const take = () => {
+    if (!FM.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(dir, false, $(), null)) return false;
+    writeText(`${dir}/pid`, String($.NSProcessInfo.processInfo.processIdentifier));
+    return true;
+  };
+  if (take()) return dir;
+  if (exists(dir) && lockStale(dir, staleSec)) {
     removePath(dir);
-    if (FM.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(dir, false, $(), null)) return dir;
+    if (take()) return dir;
   }
   return null;
 }
 function lockHeld(name, staleSec) {
-  const dir = `${cacheRoot()}/locks/${name}.lock`;
-  return exists(dir) && nowMs() - mtimeMs(dir) <= staleSec * 1000;
+  const dir = lockDir(name);
+  return exists(dir) && !lockStale(dir, staleSec);
 }
 function withLock(name, waitSec, staleSec, fn) {
   let lock = tryLock(name, staleSec);
@@ -350,7 +374,7 @@ const AADSTS = {
   50020: ["auth", "This account doesn't belong to the app's tenant. Check the tenant or the app's supported account types."],
   50105: ["consent", "Your admin must assign you to this app before you can use it."],
   53003: ["auth", "Blocked by your organization's Conditional Access policy."],
-  70011: ["config", "Microsoft rejected the requested permissions (invalid scope)."],
+  70011: ["config", "Microsoft rejected the requested permissions. With a personal Microsoft account, set the tenant to “consumers”."],
   700082: ["auth", "Your sign-in expired after a long period of inactivity. Sign in again."],
   70008: ["auth", "Your sign-in expired. Sign in again."],
   50173: ["auth", "Your sign-in is no longer valid (password changed or session revoked). Sign in again."],
@@ -686,12 +710,12 @@ function icon(name) {
   return { path: `icons/${name}.png` };
 }
 function info(title, subtitle, ic = "info", extra = {}) {
-  return Object.assign({ title, subtitle: subtitle || "", valid: false, icon: icon(ic) }, extra);
+  return Object.assign({ title: oneLine(title), subtitle: oneLine(subtitle || "", 200), valid: false, icon: icon(ic) }, extra);
 }
 // An actionable row. action goes to the "act" script as $m365_action.
 function row(title, subtitle, ic, action, arg, vars = {}, mods = {}, extra = {}) {
   const variables = Object.assign({ m365_action: action }, vars);
-  const it = { title: oneLine(title), subtitle, arg, valid: true, icon: icon(ic), variables, mods: {} };
+  const it = { title: oneLine(title), subtitle: oneLine(subtitle || "", 200), arg, valid: true, icon: icon(ic), variables, mods: {} };
   for (const [k, m] of Object.entries(mods)) {
     it.mods[k] = m.valid === false
       ? { valid: false, arg: "", subtitle: m.subtitle }
@@ -824,6 +848,8 @@ function poll() {
       let who = "";
       try {
         const me = graph("GET", "/me?$select=id,displayName,mail,userPrincipalName");
+        const prev = account();
+        if (prev && prev.id && prev.id !== me.id) removePath(cacheDir()); // someone else's data
         writeJSON(`${dataRoot()}/account.json`, {
           id: me.id, name: me.displayName || "", email: me.mail || me.userPrincipalName || "",
           client_id: CLIENT_ID, tenant: TENANT, signed_in_at: nowMs(),
@@ -1050,6 +1076,7 @@ function readable(s) {
 }
 
 function statusItems(rest) {
+  if (PERSONAL_ONLY) return [info("Teams status needs a work or school account", "Personal Microsoft accounts (tenant “consumers”) have no presence", "presence-offline")];
   const words = rest.trim().split(/\s+/).filter(Boolean);
   let mins = null;
   // Duration may be the last one or two words: "busy 2h", "busy 1 h", "dnd 1h 30m".

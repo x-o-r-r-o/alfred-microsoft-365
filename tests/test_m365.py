@@ -42,6 +42,8 @@ class Mock:
         self.overrides = {}         # (method, path) -> list of (status, headers, json)
         self.created = []
         self.foreign_next = False
+        self.me = {"id": "user-1", "displayName": "Zoë Tester", "mail": "zoe@contoso.com"}
+        self.device_scopes = []
 
     def issue(self):
         self.issued += 1
@@ -109,6 +111,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, MOCK.devicecode_error)
         assert form["client_id"] == [CLIENT]
         assert "offline_access" in form["scope"][0]
+        MOCK.device_scopes.append(form["scope"][0])
         self.send(200, MOCK.devicecode)
 
     def token(self, form):
@@ -142,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def graph(self, method, path, q, body):
         if path == "/me":
-            return self.send(200, {"id": "user-1", "displayName": "Zoë Tester", "mail": "zoe@contoso.com"})
+            return self.send(200, MOCK.me)
         if path == "/me/calendarView":
             return self.send(200, self.page(MOCK.events, 2, q, path))
         if path == "/me/presence":
@@ -954,6 +957,67 @@ class AuditOneTests(Base):
         self.assertTrue(os.path.isdir(os.path.join(self.dir, "cache", "default")))
         self.act("logout")
         self.assertFalse(os.path.exists(os.path.join(self.dir, "cache", "default")))
+
+
+# ---------------------------------------------------------------- regression tests (audit pass 2)
+
+class AuditTwoTests(Base):
+    def dead_lock(self, name):
+        d = os.path.join(self.dir, "cache", "locks", f"{name}.lock")
+        os.makedirs(d)
+        with open(os.path.join(d, "pid"), "w") as f:
+            f.write("999999")
+
+    def test_lock_of_a_killed_process_is_ignored(self):
+        self.sign_in()
+        MOCK.pages = [page("Old")]
+        self.sf("onenote")
+        age(os.path.join(self.dir, "cache", "user-1", "onenote-index.json"), 7200)
+        MOCK.pages = [page("Fresh")]
+        self.dead_lock("refresh-onenote-index")
+        it = self.sf("onenote")
+        self.assertEqual(it[0]["title"], "Fresh")
+        self.assertNotIn("rerun", self.last)
+
+    def test_token_lock_of_a_killed_process_does_not_stall(self):
+        self.sign_in(access="AT-old", expires_in=-10, valid=False)
+        MOCK.events = [ev("Standup", "2026-09-26T11:00:00", "2026-09-26T11:15:00")]
+        self.dead_lock("token")
+        t = time.time()
+        self.assertEqual(self.sf("teams")[0]["title"], "Standup")
+        self.assertLess(time.time() - t, 5)
+
+    def test_newlines_in_graph_fields_are_flattened(self):
+        self.sign_in()
+        MOCK.events = [ev("Two\nlines", "2026-09-26T11:00:00", "2026-09-26T11:15:00", join=None, webLink="",
+                          location={"displayName": "Room\r\n2"})]
+        it = self.sf("outlook")
+        self.assertEqual(it[0]["title"], "Two lines")
+        self.assertIn("Room 2", it[0]["subtitle"])
+
+    def test_personal_accounts_skip_presence(self):
+        self.act("login", tenant="consumers")
+        self.assertNotIn("Presence", MOCK.device_scopes[-1])
+        self.act("cancel-login", tenant="consumers")
+        self.act("login")
+        self.assertIn("Presence.ReadWrite", MOCK.device_scopes[-1])
+        self.act("cancel-login")
+        MOCK.valid_access.add("AT-seed")
+        kc = os.path.join(self.dir, "kc", KC_FILE.replace("common", "consumers"))
+        with open(kc, "w") as f:
+            json.dump({"access_token": "AT-seed", "refresh_token": "RT-seed", "expires_at": int(time.time() * 1000) + 3600000}, f)
+        it = self.sf("teams", "status busy", tenant="consumers")
+        self.assertEqual(it[0]["title"], "Teams status needs a work or school account")
+
+    def test_signing_in_as_someone_else_drops_their_cache(self):
+        self.sign_in()
+        self.sf("teams")
+        self.assertTrue(os.path.isdir(os.path.join(self.dir, "cache", "user-1")))
+        MOCK.me = {"id": "user-2", "displayName": "Other", "mail": "o@x.com"}
+        MOCK.device_queue = ["ok"]
+        self.act("login", M365_TEST_INTERVAL_SCALE="0.02")
+        self.wait_for(lambda: "Signed in as Other" in self.read("notified"))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "cache", "user-1")))
 
 
 class PlistTests(unittest.TestCase):

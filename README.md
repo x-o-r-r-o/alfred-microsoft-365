@@ -18,7 +18,7 @@ The workflow signs in with your own app registration, so no third party ever see
 7. Enter the client ID and the tenant (`common` by default) in the Workflow’s Configuration.
 8. Sign in via the `m365` keyword. Alfred copies a code and opens microsoft.com/devicelogin: paste the code, sign in, and accept the permissions. A notification confirms when you’re signed in.
 
-Your sign-in stays in the macOS Keychain and renews itself. Teams status needs a work or school account.
+Your sign-in stays in the macOS Keychain and renews itself. Teams status needs a work or school account: with the tenant `consumers` (personal accounts) the workflow doesn’t ask for `Presence.ReadWrite`.
 
 ## Usage
 
