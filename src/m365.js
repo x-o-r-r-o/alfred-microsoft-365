@@ -254,7 +254,7 @@ function kcQuery(acct) {
 // A locked Keychain (or a cancelled unlock prompt) isn't "signed out": say so instead of
 // offering a sign-in whose tokens couldn't be saved either.
 function keychainError(status) {
-  return new M365Error("keychain", `Couldn't read your sign-in from the Keychain (error ${status}). Unlock the login keychain and try again.`, { status });
+  return new M365Error("keychain", `Couldn’t read your sign-in from the Keychain (error ${status}). Unlock the login keychain and try again.`, { status });
 }
 function testSecretPath(acct) {
   const dir = testOnly("M365_TEST_KEYCHAIN_DIR") || "";
@@ -280,7 +280,7 @@ function kcGet(acct) {
 function kcSet(acct, value) {
   const t = testSecretPath(acct);
   if (t) {
-    if (!writeText(t, value)) throw new M365Error("auth", "Couldn't save the sign-in to the Keychain");
+    if (!writeText(t, value)) throw new M365Error("auth", "Couldn’t save the sign-in to the Keychain");
     return;
   }
   const data = $(value).dataUsingEncoding($.NSUTF8StringEncoding);
@@ -293,7 +293,7 @@ function kcSet(acct, value) {
     q.setObjectForKey($("Microsoft 365 (Alfred) sign-in"), $("labl"));
     status = $.SecItemAdd(q, null);
   }
-  if (status !== 0) throw new M365Error("auth", `Couldn't save the sign-in to the Keychain (error ${status})`);
+  if (status !== 0) throw new M365Error("auth", `Couldn’t save the sign-in to the Keychain (error ${status})`);
 }
 function kcDel(acct) {
   const t = testSecretPath(acct);
@@ -395,10 +395,11 @@ function http(method, url, { headers = {}, body = null, timeout = 20 } = {}) {
   return { status, headers: hdrs, text, json };
 }
 
+const NET_MESSAGE = "Can’t reach Microsoft 365. Check your internet connection.";
 function netError(code) {
   // Only connection problems mean "offline"; anything else (e.g. a malformed URL) is a bug to report.
-  if ([5, 6, 7, 28, 35, 52, 55, 56].includes(code)) return new M365Error("network", "Can't reach Microsoft. Check your internet connection.", { code });
-  return new M365Error("graph", `Request failed (curl error ${code})`, { code });
+  if ([5, 6, 7, 28, 35, 52, 55, 56].includes(code)) return new M365Error("network", NET_MESSAGE, { code });
+  return new M365Error("graph", `Couldn’t connect to Microsoft 365 (curl error ${code})`, { code });
 }
 
 // A 2xx that isn't JSON comes from a captive portal or a proxy, not from Microsoft.
@@ -407,6 +408,10 @@ function notJSON(r) {
 }
 function unexpectedResponse() {
   return new M365Error("network", "Unexpected answer from the network (captive portal or proxy?). Check your connection.");
+}
+
+function throttled(retryAfter) {
+  return new M365Error("throttle", `Microsoft 365 is limiting requests. Try again in ${plural(retryAfter, "second")}.`, { retryAfter });
 }
 
 function retryAfterSec(r) {
@@ -421,7 +426,7 @@ function retryAfterSec(r) {
 
 // Clear messages for the AADSTS errors people actually hit with a self-registered app.
 const AADSTS = {
-  65001: ["consent", "The app doesn't have your consent for these permissions. Sign in again to consent, or ask your IT admin to grant admin consent."],
+  65001: ["consent", "The app doesn’t have your consent for these permissions. Sign in again to consent, or ask your IT admin to grant admin consent."],
   65004: ["auth", "You declined to give the app permission. Sign in again and accept the permissions."],
   90094: ["consent", "Your organization requires an admin to approve this app. Ask your IT admin to grant admin consent for it."],
   90095: ["consent", "Your organization requires an admin to approve this app. Ask your IT admin to grant admin consent for it."],
@@ -430,12 +435,12 @@ const AADSTS = {
   50194: ["config", "Your app registration is single-tenant: set its Directory (tenant) ID instead of “common” in the Workflow’s Configuration."],
   9002346: ["config", "Your app registration only allows personal Microsoft accounts: set the tenant to “consumers”."],
   9002331: ["config", "Your app registration only allows personal Microsoft accounts: set the tenant to “consumers”."],
-  50059: ["config", "Microsoft couldn't tell which tenant to use. Set your Directory (tenant) ID in the Workflow’s Configuration."],
+  50059: ["config", "Microsoft couldn’t tell which tenant to use. Set your Directory (tenant) ID in the Workflow’s Configuration."],
   90002: ["config", "Tenant not found. Check the tenant in the Workflow’s Configuration."],
-  900023: ["config", "The tenant isn't valid. Check the tenant in the Workflow’s Configuration."],
-  50020: ["auth", "This account doesn't belong to the app's tenant. Check the tenant or the app's supported account types."],
+  900023: ["config", "The tenant isn’t valid. Check the tenant in the Workflow’s Configuration."],
+  50020: ["auth", "This account doesn’t belong to the app’s tenant. Check the tenant or the app’s supported account types."],
   50105: ["consent", "Your admin must assign you to this app before you can use it."],
-  53003: ["auth", "Blocked by your organization's Conditional Access policy (it may block device code sign-in). Ask your IT admin."],
+  53003: ["auth", "Blocked by your organization’s Conditional Access policy (it may block device code sign-in). Ask your IT admin."],
   70011: ["config", "Microsoft rejected the requested permissions. With a personal Microsoft account, set the tenant to “consumers”."],
   700082: ["auth", "Your sign-in expired after a long period of inactivity. Sign in again."],
   70008: ["auth", "Your sign-in expired. Sign in again."],
@@ -458,7 +463,7 @@ function aadError(j, status) {
   if (code && AADSTS[code]) return new M365Error(AADSTS[code][0], AADSTS[code][1], { aadsts: code, error: j.error });
   let desc = String((j && j.error_description) || "").split(/\r?\n/)[0].replace(/^AADSTS\d+:\s*/, "")
     .replace(/\s*(Trace ID|Correlation ID|Timestamp):[\s\S]*$/, "");
-  if (!desc) desc = (j && j.error) || `Sign-in failed (HTTP ${status})`;
+  if (!desc) desc = (j && j.error) || `Couldn’t sign in (HTTP ${status})`;
   const kind = j && ["invalid_grant", "interaction_required", "login_required", "consent_required"].includes(j.error) ? "auth" : "config";
   return new M365Error(kind, oneLine(desc, 200), { aadsts: code, error: j && j.error });
 }
@@ -504,7 +509,7 @@ function refreshTokens(staleAccess) {
     if (r.net) throw netError(r.net);
     if (notJSON(r)) throw unexpectedResponse();
     if (r.status === 200 && r.json.access_token) return saveTokenResponse(r.json, t.refresh_token);
-    if (r.status === 429 || r.status >= 500) throw new M365Error("throttle", "Microsoft sign-in is busy. Try again shortly.", { retryAfter: retryAfterSec(r) });
+    if (r.status === 429 || r.status >= 500) throw throttled(retryAfterSec(r));
     const e = aadError(r.json, r.status);
     if (e.kind === "auth" || e.kind === "consent") kcDel(kcAccount()); // the refresh token is dead
     if (e.kind === "config") e.kind = "auth";
@@ -535,7 +540,7 @@ function graph(method, path, opts = {}) {
   // Never send the token anywhere but Graph (e.g. a crafted @odata.nextLink).
   if (!sameOrigin(url, GRAPH_BASE)) throw new M365Error("graph", "Refusing to follow a link outside Microsoft Graph");
   const until = Number(readText(throttleFile()) || 0);
-  if (until > nowMs()) throw new M365Error("throttle", "Microsoft Graph asked us to slow down.", { retryAfter: Math.ceil((until - nowMs()) / 1000) });
+  if (until > nowMs()) throw throttled(Math.ceil((until - nowMs()) / 1000));
   let token = accessToken();
   let refreshed = false, retries = 0;
   for (;;) {
@@ -567,7 +572,7 @@ function graph(method, path, opts = {}) {
         continue;
       }
       writeText(throttleFile(), String(nowMs() + Math.min(wait, 300) * 1000));
-      throw new M365Error("throttle", "Microsoft Graph asked us to slow down.", { retryAfter: wait });
+      throw throttled(wait);
     }
     if (r.status >= 400) throw graphError(r);
     if (notJSON(r)) throw unexpectedResponse();
@@ -578,14 +583,14 @@ function graph(method, path, opts = {}) {
 function graphError(r) {
   const e = (r.json && r.json.error) || {};
   const code = String(e.code || "");
-  const msg = oneLine(e.message || `HTTP ${r.status}`, 200);
+  const msg = oneLine(e.message || "", 200);
   if (code === "10008") {
-    return new M365Error("graph", "OneNote can't list your pages: a OneDrive library holds more than 5,000 OneNote items (error 10008)", { status: r.status, code });
+    return new M365Error("graph", "OneNote can’t list your pages: a OneDrive library holds more than 5,000 OneNote items (error 10008)", { status: r.status, code });
   }
   if (r.status === 403) {
-    return new M365Error("consent", `Permission denied: ${msg}`, { status: 403, code });
+    return new M365Error("consent", `Permission denied: ${msg || "HTTP 403"}`, { status: 403, code });
   }
-  return new M365Error("graph", `Microsoft Graph error ${r.status}: ${msg}`, { status: r.status, code });
+  return new M365Error("graph", msg ? `Microsoft Graph returned an error: ${msg} (HTTP ${r.status})` : `Microsoft Graph returned an error (HTTP ${r.status})`, { status: r.status, code });
 }
 
 // Follow @odata.nextLink until done (or maxPages).
@@ -636,12 +641,12 @@ function appCanOpen(url) {
 }
 function openURL(url) {
   if (!/^(https:|msteams:|onenote:)/i.test(url) && !(env("M365_TEST_OPEN_FILE", "") && /^http:/.test(url))) {
-    throw new M365Error("graph", "Refusing to open a link that isn't https");
+    throw new M365Error("graph", "Refusing to open a link that isn’t https");
   }
   testOnly("M365_TEST_OPEN_FILE");
   if (testRecord("M365_TEST_OPEN_FILE", url)) return;
   const u = $.NSURL.URLWithString(url);
-  if (u.isNil() || !$.NSWorkspace.sharedWorkspace.openURL(u)) throw new M365Error("graph", "Couldn't open the link");
+  if (u.isNil() || !$.NSWorkspace.sharedWorkspace.openURL(u)) throw new M365Error("graph", "Couldn’t open the link");
 }
 function openPreferApp(appUrl, webUrl, preferApp) {
   if (preferApp && appUrl && appCanOpen(appUrl)) return openURL(appUrl);
@@ -838,18 +843,18 @@ function errorItems(e) {
       return [info(e.message, "Your organization may require admin consent for this app", "error"),
         row("Sign in again", "To consent to the workflow’s permissions", "login", "login", "login")];
     case "network":
-      return [info("You're offline", e.message, "offline")];
+      return [info("Can’t reach Microsoft 365", e.message === NET_MESSAGE ? "Check your internet connection" : e.message, "offline")];
     case "keychain":
       return [info("Your Keychain is locked", e.message, "error")];
     case "throttle":
-      return [info("Microsoft 365 is busy", `Too many requests. Try again in ${plural(e.retryAfter || 10, "second")}.`, "error")];
+      return [info("Microsoft 365 is limiting requests", `Try again in ${plural(e.retryAfter || 10, "second")}`, "error")];
     default:
       return [info(e.message, `Try again in a moment, or check your sign-in and permissions via the ${KW_ACCOUNT} keyword`, "error")];
   }
 }
 function warningRow(w, age) {
   if (w.kind === "auth") return signInRow(`${oneLine(w.message, 80)} (showing results from ${ago(age * 1000)})`);
-  const base = w.kind === "network" ? "Offline" : w.kind === "throttle" ? "Microsoft 365 is busy" : oneLine(w.message, 80);
+  const base = w.kind === "network" ? "Offline" : w.kind === "throttle" ? "Microsoft 365 is limiting requests" : oneLine(w.message, 80);
   return info(`${base}: showing results from ${ago(age * 1000)}`, "", w.kind === "network" ? "offline" : "error");
 }
 
@@ -929,7 +934,7 @@ function poll() {
     if (r.net || notJSON(r)) continue; // offline for a moment: keep trying until the code expires
     const j = r.json || {};
     if (r.status === 200 && j.access_token) {
-      if (!j.refresh_token) return finish("Signed in, but Microsoft didn't return a refresh token (offline_access). Sign in again.");
+      if (!j.refresh_token) return finish("Signed in, but Microsoft didn’t return a refresh token (offline_access). Sign in again.");
       const cur = readJSON(pendingFile());
       if (!cur || cur.id !== id) return;
       try {
@@ -968,9 +973,9 @@ function poll() {
       case "expired_token":
         return finish(`The sign-in code expired. Use the ${KW_ACCOUNT} keyword to try again.`);
       case "bad_verification_code":
-        return finish(`Microsoft didn't recognize the sign-in code. Use the ${KW_ACCOUNT} keyword to try again.`);
+        return finish(`Microsoft didn’t recognize the sign-in code. Use the ${KW_ACCOUNT} keyword to try again.`);
       default:
-        return finish(`Sign-in failed: ${aadError(j, r.status).message}`);
+        return finish(`Couldn’t sign in: ${aadError(j, r.status).message}`);
     }
   }
 }
@@ -1232,7 +1237,7 @@ function statusItems(rest) {
     if (cur.data && cur.data.message) rows.push(info(`Status message: ${cur.data.message}`, "Change or clear it with “message”", "info"));
   } catch (e) {
     if (["auth", "network", "keychain"].includes(e.kind)) return errorItems(e);
-    rows.push(info("Couldn't read your status", presenceHint(e), "error"));
+    rows.push(info("Couldn’t read your status", presenceHint(e), "error"));
   }
   if (!wanted && !mins) rows.push(Object.assign(info("Set a status message…", "Shows next to your name in Teams, like “message Out for lunch :: 1h”", "info"), { autocomplete: "message ", valid: false }));
   if (!matches.length) {
@@ -1271,7 +1276,7 @@ function setPresence(key, mins) {
       graph("POST", "/me/presence/setUserPreferredPresence", { json: body });
     }
   } catch (e) {
-    if (e.kind === "graph" || e.kind === "consent") return `Couldn't set your status: ${presenceHint(e)}`;
+    if (e.kind === "graph" || e.kind === "consent") return `Couldn’t set your status: ${presenceHint(e)}`;
     return e.message === "Not signed in" ? `Sign in first via the ${KW_ACCOUNT} keyword` : e.message;
   }
   removePath(cacheFile("presence"));
@@ -1320,7 +1325,7 @@ function setStatusMessage(text, mins) {
   try {
     graph("POST", "/me/presence/setStatusMessage", { json: body });
   } catch (e) {
-    if (e.kind === "graph" || e.kind === "consent") return `Couldn't set your status message: ${presenceHint(e)}`;
+    if (e.kind === "graph" || e.kind === "consent") return `Couldn’t set your status message: ${presenceHint(e)}`;
     return e.message === "Not signed in" ? `Sign in first via the ${KW_ACCOUNT} keyword` : e.message;
   }
   removePath(cacheFile("presence"));
@@ -1669,7 +1674,7 @@ function resolveSectionPath() {
   if (ONENOTE_SECTION.includes("/")) throw new M365Error("graph", `Section “${ONENOTE_SECTION}” not found`);
   // A plain name: OneNote finds it in the default notebook (or creates it), but can't create
   // a section whose name has any of these characters.
-  if (/[?*\\/:<>|&#"%~]/.test(ONENOTE_SECTION)) throw new M365Error("graph", `Section “${ONENOTE_SECTION}” not found (and OneNote can't create a section with that name)`);
+  if (/[?*\\/:<>|&#"%~]/.test(ONENOTE_SECTION)) throw new M365Error("graph", `Section “${ONENOTE_SECTION}” not found (and OneNote can’t create a section with that name)`);
   return `/me/onenote/pages?sectionName=${encodeURIComponent(ONENOTE_SECTION)}`;
 }
 
@@ -1691,7 +1696,7 @@ function createPage() {
     }
   } catch (e) {
     if (e.kind === "graph" && e.status === 507) return "That section is full: choose another one in the Workflow’s Configuration";
-    return `Couldn't create the page: ${e.message}`;
+    return `Couldn’t create the page: ${e.message}`;
   }
   const entry = pageEntry(page, page.parentSection && page.parentSection.displayName, "");
   entry.m = nowMs();

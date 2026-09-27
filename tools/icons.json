@@ -6,7 +6,7 @@
   "refresh": ["arrow.clockwise", "#0891B2"],
   "info": ["info.circle.fill", "#64748B"],
   "error": ["exclamationmark.triangle.fill", "#DC2626"],
-  "offline": ["wifi.slash", "#64748B"],
+  "offline": ["wifi.slash", "#D97706"],
   "meeting": ["video.fill", "#5B5FC7"],
   "meeting-ended": ["video.slash.fill", "#94A3B8"],
   "calendar": ["calendar", "#0F6CBD"],

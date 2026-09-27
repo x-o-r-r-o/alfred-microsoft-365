@@ -223,7 +223,7 @@
 				<key>skipuniversalaction</key>
 				<true/>
 				<key>subtext</key>
-				<string>Join today's meetings, set your status or chat with someone</string>
+				<string>Join today’s meetings, set your status or chat with someone</string>
 				<key>title</key>
 				<string>Microsoft Teams</string>
 				<key>type</key>
@@ -325,7 +325,7 @@
 				<key>skipuniversalaction</key>
 				<true/>
 				<key>subtext</key>
-				<string>Today's agenda, or type to search mail</string>
+				<string>Today’s agenda, or type to search mail</string>
 				<key>title</key>
 				<string>Outlook</string>
 				<key>type</key>

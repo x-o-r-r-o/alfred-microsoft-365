@@ -27,7 +27,7 @@ If sign-in fails with a Conditional Access error, your organization blocks devic
 
 See today’s Teams meetings via the `teams` keyword, with the ones happening now first. Meetings from other organizations count too when their join link is in the location or the start of the invitation. Type to filter them by title or organizer, or to find people.
 
-![Today's Teams meetings](images/teams.png)
+![Today’s Teams meetings](images/teams.png)
 
 * <kbd>↩</kbd> Join the meeting in the Teams app (or the browser, set in the Workflow’s Configuration).
 * <kbd>⌘</kbd><kbd>↩</kbd> Copy the join link.
@@ -68,7 +68,7 @@ Create a page by typing `new` and its title, like `new Ideas`, via the `onenote`
 
 See today’s agenda via the `outlook` keyword, or type to search your mail. Search accepts Outlook’s syntax, like `from:anna` or `subject:invoice`.
 
-![Today's agenda and mail search](images/outlook.png)
+![Today’s agenda and mail search](images/outlook.png)
 
 * <kbd>↩</kbd> Open the event or message in Outlook on the web.
 * <kbd>⌘</kbd><kbd>↩</kbd> Join an event’s online meeting (Teams, or a Zoom, Google Meet or Webex link in the location or invitation), or copy a message’s sender address.

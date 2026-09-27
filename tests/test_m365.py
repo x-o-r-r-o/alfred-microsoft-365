@@ -380,7 +380,7 @@ class LoginTests(Base):
 
     def test_declined_expired_and_bad_code(self):
         for resp, msg in (("declined", "Sign-in was declined."), ("expired", "The sign-in code expired"),
-                          ("bad", "didn't recognize the sign-in code")):
+                          ("bad", "didn’t recognize the sign-in code")):
             MOCK.reset()
             MOCK.device_queue = ["pending", resp]
             if os.path.exists(os.path.join(self.dir, "notified")):
@@ -429,7 +429,7 @@ class LoginTests(Base):
         self.assertEqual(self.act("login"), "Weird thing.")
 
     def test_login_offline(self):
-        self.assertIn("Can't reach Microsoft", self.act("login", M365_LOGIN_BASE="http://127.0.0.1:9"))
+        self.assertIn("Can’t reach Microsoft 365", self.act("login", M365_LOGIN_BASE="http://127.0.0.1:9"))
 
     def test_logout(self):
         self.sign_in()
@@ -501,17 +501,19 @@ class TokenTests(Base):
         self.sign_in()
         MOCK.overrides[("GET", "/v1.0/me/messages")] = [(429, {"Retry-After": "120"}, {"error": {"code": "TooManyRequests", "message": "slow"}})]
         it = self.sf("outlook", "hi")
-        self.assertEqual(it[0]["title"], "Microsoft 365 is busy")
-        self.assertIn("120 seconds", it[0]["subtitle"])
+        self.assertEqual(it[0]["title"], "Microsoft 365 is limiting requests")
+        self.assertEqual(it[0]["subtitle"], "Try again in 120 seconds")
         n = len(MOCK.requests)
         it = self.sf("outlook", "other")
-        self.assertEqual(it[0]["title"], "Microsoft 365 is busy")
+        self.assertEqual(it[0]["title"], "Microsoft 365 is limiting requests")
         self.assertEqual(len(MOCK.requests), n)  # didn't hammer the service
 
     def test_offline(self):
         self.sign_in()
         it = self.sf("teams", M365_GRAPH_BASE="http://127.0.0.1:9/v1.0")
-        self.assertEqual(it[0]["title"], "You're offline")
+        self.assertEqual(it[0]["title"], "Can’t reach Microsoft 365")
+        self.assertEqual(it[0]["subtitle"], "Check your internet connection")
+        self.assertEqual(it[0]["icon"]["path"], "icons/offline.png")
 
     def test_offline_with_stale_cache_shows_cached_results(self):
         self.sign_in()
@@ -519,7 +521,8 @@ class TokenTests(Base):
         cache = os.path.join(self.dir, "cache", "user-1", "events-2026-09-26.json")
         age(cache, 3600)
         it = self.sf("teams", M365_GRAPH_BASE="http://127.0.0.1:9/v1.0")
-        self.assertTrue(it[0]["title"].startswith("Offline: showing results from 1 h ago"), it[0])
+        self.assertEqual(it[0]["title"], "Offline: showing results from 1 h ago", it[0])
+        self.assertEqual(it[0]["icon"]["path"], "icons/offline.png")
         self.assertEqual(it[1]["title"], "Standup")
 
     def test_foreign_next_link_is_refused(self):
@@ -639,7 +642,7 @@ class TeamsTests(Base):
         MOCK.overrides[("GET", "/v1.0/me/presence")] = [(403, {}, {"error": {"code": "Forbidden", "message": "Not supported for MSA"}})]
         MOCK.overrides[("POST", "/v1.0/me/presence/setUserPreferredPresence")] = [(403, {}, {"error": {"code": "Forbidden", "message": "x"}})]
         it = self.sf("teams", "status busy")
-        self.assertEqual(it[0]["title"], "Couldn't read your status")
+        self.assertEqual(it[0]["title"], "Couldn’t read your status")
         self.assertIn("work or school", it[0]["subtitle"])
         self.assertIn("work or school", self.item_act(it[1]))
 
@@ -847,7 +850,7 @@ class OneNoteTests(Base):
         MOCK.overrides[("POST", "/v1.0/me/onenote/pages")] = [(507, {}, {"error": {"code": "19999", "message": "full"}})]
         it = self.sf("onenote", "new T")
         self.assertIn("section is full", self.item_act(it[0]))
-        self.assertIn("Can't reach", self.item_act(it[0], M365_GRAPH_BASE="http://127.0.0.1:9/v1.0"))
+        self.assertIn("Can’t reach Microsoft 365", self.item_act(it[0], M365_GRAPH_BASE="http://127.0.0.1:9/v1.0"))
 
 
 class AccountTests(Base):
@@ -1035,7 +1038,7 @@ class AuditThreeTests(Base):
     def test_captive_portal_is_not_an_empty_result(self):
         self.sign_in()
         it = self.sf("teams", M365_TEST_CURL=self.portal_curl())
-        self.assertEqual(it[0]["title"], "You're offline")
+        self.assertEqual(it[0]["title"], "Can’t reach Microsoft 365")
         self.assertIn("captive portal", it[0]["subtitle"])
         self.assertFalse(os.path.exists(os.path.join(self.dir, "cache", "user-1", "events-2026-09-26.json")))
         self.assertIn("captive portal", self.act("login", M365_TEST_CURL=self.portal_curl()))
@@ -1043,7 +1046,7 @@ class AuditThreeTests(Base):
     def test_captive_portal_during_refresh_keeps_the_sign_in(self):
         self.sign_in(access="AT-old", expires_in=-10, valid=False)
         it = self.sf("outlook", M365_TEST_CURL=self.portal_curl())
-        self.assertEqual(it[0]["title"], "You're offline")
+        self.assertEqual(it[0]["title"], "Can’t reach Microsoft 365")
         self.assertIsNotNone(self.tokens())
 
     def test_deleted_section_reloads_the_section_list(self):
@@ -1145,7 +1148,7 @@ class AuditFourTests(Base):
     def test_section_name_onenote_cannot_create(self):
         self.sign_in()
         it = self.sf("onenote", "new T")
-        self.assertIn("can't create a section", self.item_act(it[0], onenote_section="Q&A"))
+        self.assertIn("can’t create a section", self.item_act(it[0], onenote_section="Q&A"))
         self.assertEqual(MOCK.created, [])
 
     def test_curl_config_quoting_round_trips(self):
